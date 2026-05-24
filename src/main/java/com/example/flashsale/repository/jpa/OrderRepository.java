@@ -20,12 +20,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Long> findExpiredOrderIds(OrderStatus status, LocalDateTime before, Pageable pageable);
 
     // Race-safe cancellation: returns 1 if we claimed it, 0 if already paid/cancelled
-    @Modifying
+    // clearAutomatically = true so findById after this UPDATE sees the new status
+    @Modifying(clearAutomatically = true)
     @Query("UPDATE Order o SET o.status = 'CANCELLED' WHERE o.id = :id AND o.status = 'PENDING'")
     int cancelIfPending(Long id);
 
     // Race-safe payment: returns 1 if we claimed it, 0 if already expired/cancelled
-    @Modifying
+    // clearAutomatically = true so findById after this UPDATE sees PAID + paidAt
+    @Modifying(clearAutomatically = true)
     @Query("UPDATE Order o SET o.status = 'PAID', o.paidAt = :now WHERE o.id = :id AND o.status = 'PENDING'")
     int payIfPending(Long id, LocalDateTime now);
 }

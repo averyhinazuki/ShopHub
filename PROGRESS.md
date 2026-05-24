@@ -296,11 +296,79 @@ The original codebase was bootstrapped around a "flash sale" concept that was dr
 
 ---
 
+---
+
+## ✅ Step 7 — Checkout (Sequential Deduction, No Lock)
+**Status:** Complete
+
+### Design
+- **No Redisson lock** (Step 8 adds it) — demonstrates the race condition JMeter will expose
+- **No cache invalidation** (Step 8 adds it) — Redis `:stock` / `:detail` keys can go stale during concurrent checkouts
+- **MySQL conditional UPDATE** is the sole oversell guard: `WHERE available_stock >= qty`; `rowsAffected = 0` → `SoldOutException` (409)
+- **`@Transactional` wraps the full method** in Step 7, so a `SoldOutException` mid-loop causes an automatic DB rollback of all prior deductions. Step 8 restructures: each deduction commits under its own per-product lock and manual compensation (`restoreStock`) handles the unwind.
+- **Price snapshot** — product price is read once at cart-load time; `priceAtPurchase` on `OrderItem` is immune to later price changes
+- **Publish-after-commit** — checkout and pay publish in-process `OrderCreatedDomainEvent` / `PaymentCompletedDomainEvent` inside the transaction; `OrderEventKafkaBridge` (`@TransactionalEventListener(AFTER_COMMIT)`) forwards to Kafka only after the DB commits. Bridge is a log-only stub in Step 7; Kafka wired in Step 9.
+
+### Files created
+
+| File | Purpose |
+|------|---------|
+| `dto/order/OrderItemResponse.java` | `{ id, productId, productName, quantity, priceAtPurchase, lineTotal }` |
+| `kafka/event/OrderCreatedDomainEvent.java` | In-process Spring event — extends `ApplicationEvent`; carries `orderId, userId, createdAt` |
+| `kafka/event/PaymentCompletedDomainEvent.java` | In-process Spring event — carries `orderId, userId, paidAt` |
+| `kafka/producer/OrderEventKafkaBridge.java` | `@TransactionalEventListener(AFTER_COMMIT)` stub — logs only; KafkaTemplate wired in Step 9 |
+
+### Files updated
+
+| File | Change |
+|------|--------|
+| `dto/OrderResponse.java` | Added `List<OrderItemResponse> items` (null in list views, populated in detail view) |
+| `repository/jpa/OrderRepository.java` | Added `clearAutomatically = true` to `payIfPending` and `cancelIfPending` so `findById` after a JPQL UPDATE sees fresh state |
+| `service/OrderService.java` | Full `checkout()` + `pay()` + `getOrder()` (ownership check) implemented |
+| `controller/OrderController.java` | Added `POST /checkout`, `POST /{id}/pay` |
+| `exception/GlobalExceptionHandler.java` | Added `IllegalStateException` → 409 handler (pay-conflict case) |
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/orders/checkout` | USER | Snapshot prices → sequential deductStock → create Order + OrderItems + clear cart → publish domain event |
+| GET | `/api/orders/me` | USER | Caller's orders, paginated |
+| GET | `/api/orders/{id}` | USER/ADMIN | Order detail with items; 404 for non-owners (no info leakage) |
+| POST | `/api/orders/{id}/pay` | USER/ADMIN | Conditional UPDATE `WHERE status = PENDING`; 409 if already paid/cancelled |
+
+### Checkout flow (Step 7 — no lock)
+
+```
+1. Resolve userId from JWT
+2. Load cart items + snapshot { productId, qty, price } — validates ACTIVE status (400 if not)
+3. Sequential deduction loop:
+   FOR EACH item:
+     UPDATE product_inventory SET available_stock = available_stock - qty
+       WHERE product_id = ? AND available_stock >= qty
+     rowsAffected = 0 → throw SoldOutException(productId)   → @Transactional rollback
+4. Create Order (PENDING) + OrderItems (price_at_purchase snapshot) + clear cart  ← same tx
+5. Publish OrderCreatedDomainEvent → bridge logs after commit (Step 9: Kafka send)
+```
+
+### Pay flow
+
+```
+UPDATE orders SET status = 'PAID', paid_at = NOW()
+  WHERE id = ? AND status = 'PENDING'
+rowsAffected = 0 → 409 (already paid or cancelled by expiry)
+rowsAffected = 1 → publish PaymentCompletedDomainEvent → bridge logs after commit
+```
+
+### Why `@TransactionalEventListener(AFTER_COMMIT)`?
+If a service published to Kafka *inside* the transaction and the transaction rolled back, the consumer would see an event for an order that never existed. `AFTER_COMMIT` guarantees the DB write is durable before any downstream system is notified. Conversely, if the tx commits but the JVM crashes before the Kafka send, the event is lost — the transactional outbox pattern is the production fix (out of scope, documented in README).
+
+---
+
 ## 📋 Remaining Steps
 
 | Step | What | Status |
 |------|------|--------|
-| 7 | Checkout — sequential deduction, no lock (show race) | ⬜ Pending |
 | 8 | Redisson lock + cache-aside + delayed double deletion | ⬜ Pending |
 | 9 | Kafka — async order-created + payment-completed pipeline | ⬜ Pending |
 | 10 | MongoDB — order_activity_log + user_action_log filter | ⬜ Pending |

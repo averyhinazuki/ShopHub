@@ -4,6 +4,7 @@ import com.example.flashsale.entity.ProductInventory;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
@@ -11,13 +12,18 @@ public interface ProductInventoryRepository extends JpaRepository<ProductInvento
 
     Optional<ProductInventory> findByProductId(Long productId);
 
-    // Conditional deduction — returns 1 on success, 0 if stock insufficient (the safety net)
+    // Conditional deduction — returns 1 on success, 0 if stock insufficient (the safety net).
+    // @Transactional: checkout() has no outer transaction; this starts + commits its own
+    // short tx so the deduction is immediately durable before the lock is released.
+    @Transactional
     @Modifying
     @Query("UPDATE ProductInventory pi SET pi.availableStock = pi.availableStock - :qty " +
            "WHERE pi.product.id = :productId AND pi.availableStock >= :qty")
     int deductStock(Long productId, int qty);
 
-    // Restore stock — no condition needed (we are adding back, not racing to subtract)
+    // Restore stock — no condition needed (we are adding back, not racing to subtract).
+    // @Transactional: same reason as deductStock — compensation runs outside any outer tx.
+    @Transactional
     @Modifying
     @Query("UPDATE ProductInventory pi SET pi.availableStock = pi.availableStock + :qty " +
            "WHERE pi.product.id = :productId")

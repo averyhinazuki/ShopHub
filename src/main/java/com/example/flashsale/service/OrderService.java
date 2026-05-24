@@ -12,7 +12,11 @@ import com.example.flashsale.kafka.event.PaymentCompletedDomainEvent;
 import com.example.flashsale.repository.jpa.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,10 +29,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Step 7  — checkout / pay / read; sequential deduction, NO Redisson lock, NO cache invalidation.
- *           Demonstrates the race condition that Step 8 fixes.
- * Step 8  — add Redisson lock + cache-aside + delayed double deletion to checkout.
- * Step 9  — OrderEventKafkaBridge forwards domain events to Kafka topics AFTER_COMMIT.
+ * Step 7  — checkout / pay / read endpoints wired up.
+ * Step 8  — checkout() restructured:
+ *            - No outer @Transactional on checkout(); each deduction commits immediately.
+ *            - Per-product Redisson lock serialises concurrent writers on the same product.
+ *            - Cache-aside: first-deletion before MySQL write, async second-deletion after.
+ *            - Manual compensation (restoreStock + cache invalidation) if any item fails.
+ * Step 9  — OrderEventKafkaBridge sends to Kafka AFTER_COMMIT (bridge stub upgraded).
  * Step 11 — OrderExpiryScheduler + GET /api/orders [ADMIN].
  */
 @Slf4j
@@ -36,74 +43,172 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final OrderRepository             orderRepository;
-    private final OrderItemRepository         orderItemRepository;
-    private final UserRepository              userRepository;
-    private final CartRepository              cartRepository;
-    private final CartItemRepository          cartItemRepository;
-    private final ProductInventoryRepository  inventoryRepository;
-    private final ApplicationEventPublisher   eventPublisher;
-
-    // -------------------------------------------------------------------------
-    // Checkout — hot path
-    // -------------------------------------------------------------------------
+    // ── Constructor-injected (via Lombok @RequiredArgsConstructor) ───────────
+    private final OrderRepository            orderRepository;
+    private final OrderItemRepository        orderItemRepository;
+    private final UserRepository             userRepository;
+    private final CartRepository             cartRepository;
+    private final CartItemRepository         cartItemRepository;
+    private final ProductInventoryRepository inventoryRepository;
+    private final ProductRepository          productRepository;
+    private final ApplicationEventPublisher  eventPublisher;
+    private final RedissonClient             redissonClient;
+    private final ProductCacheService        cacheService;
 
     /**
-     * Step 7: sequential deduction with MySQL conditional UPDATE.
-     * No Redisson lock (added Step 8). No cache invalidation (added Step 8).
-     *
-     * Transaction wraps the full checkout so that if order/cart writes fail after
-     * all deductions succeed, the deductions are rolled back automatically.
-     * Step 8 will restructure: each deduction commits under its own per-product lock,
-     * and the compensation runs manually (deductions are already committed by then).
+     * Self-injection: Spring injects the AOP proxy of this bean back as a field.
+     * Required so that internal calls to @Transactional methods (loadCartSnapshot,
+     * persistOrder) go through the proxy and honour the transaction semantics.
+     * @Lazy breaks the circular dependency: Spring builds OrderService first,
+     * then injects the proxy lazily on first use.
      */
-    @Transactional
+    @Lazy
+    @Autowired
+    private OrderService self;
+
+    // ── Snapshot types (static so they can cross method boundaries) ──────────
+
+    /** Immutable value representing one cart line at the moment of checkout. */
+    private record CheckoutItem(Long productId, int qty, BigDecimal price) {}
+
+    /** Cart state snapshot loaded before the deduction loop. */
+    private record CartSnapshot(Long cartId, List<CheckoutItem> items) {}
+
+    // =========================================================================
+    // Checkout — hot path
+    // =========================================================================
+
+    /**
+     * Step 8 checkout — no outer @Transactional.
+     *
+     * Why no outer @Transactional?
+     *   Each deduction is a short committed UPDATE under its own per-product lock.
+     *   If the order-creation step (persistOrder) fails AFTER some deductions have
+     *   already been committed, @Transactional rollback cannot undo those committed
+     *   writes. Manual compensation (step 8 below) handles that instead.
+     *   This also maximises concurrency: two users buying different products never
+     *   block each other at the transaction level — only at the per-product lock level.
+     *
+     * Flow:
+     *   1. Load cart snapshot in a read-only tx (validates ACTIVE status, snapshots prices).
+     *   2. For each item: acquire lock → first-delete cache → deductStock → release lock
+     *      → schedule async second-delete.
+     *   3. Persist order + items + clear cart in a single @Transactional.
+     *   4. On any exception: restore all committed deductions (+ cache invalidation).
+     */
     public OrderResponse checkout() {
         Long userId = resolveUserId();
 
-        // ── Step 2: Load cart + snapshot product info ─────────────────────────
+        // Step 1 — load cart + validate, returns immutable snapshot
+        CartSnapshot snapshot = self.loadCartSnapshot(userId);
+
+        // Tracks successfully committed deductions for compensation
+        List<CheckoutItem> deducted = new ArrayList<>();
+
+        try {
+            // Step 2 — sequential deduction under per-product lock
+            for (CheckoutItem item : snapshot.items()) {
+                RLock lock = redissonClient.getLock("lock:product:" + item.productId());
+                try {
+                    // Step 6a — acquire lock (5s wait, 10s lease)
+                    boolean acquired = lock.tryLock(5, 10, java.util.concurrent.TimeUnit.SECONDS);
+                    if (!acquired) {
+                        throw new RuntimeException(
+                                "Could not acquire lock for product " + item.productId()
+                                + " — try again shortly");
+                    }
+
+                    // Step 6b — first cache deletion (before MySQL write)
+                    cacheService.deleteCache(item.productId());
+
+                    // Step 6c — conditional UPDATE: the MySQL safety net
+                    int rows = inventoryRepository.deductStock(item.productId(), item.qty());
+                    if (rows == 0) {
+                        // Lock must be released before throwing — don't hold it during unwind
+                        lock.unlock();
+                        throw new SoldOutException(item.productId());
+                    }
+
+                    // Deduction committed — track it, release lock, schedule second deletion
+                    deducted.add(item);
+                    lock.unlock();
+                    // Async: kills any stale cache entry a reader may have cached between
+                    // the first deletion (step 6b) and the MySQL commit (step 6c)
+                    cacheService.scheduleSecondDeletion(item.productId());
+
+                    log.debug("[Checkout] Deducted productId={} qty={}", item.productId(), item.qty());
+
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    if (lock.isHeldByCurrentThread()) lock.unlock();
+                    throw new RuntimeException("Lock wait interrupted for product " + item.productId());
+                } catch (RuntimeException e) {
+                    // Covers SoldOutException (already unlocked above) and any other runtime failure.
+                    // isHeldByCurrentThread() guard ensures we don't double-unlock.
+                    if (lock.isHeldByCurrentThread()) lock.unlock();
+                    throw e;
+                }
+            }
+
+            // Step 3 — create order atomically; called through proxy so @Transactional fires
+            return self.persistOrder(snapshot.items(), userId, snapshot.cartId());
+
+        } catch (Exception ex) {
+            // Step 4 — compensation: unwind all committed deductions
+            // (If @Transactional had wrapped checkout(), a rollback would only undo
+            //  the in-progress tx — already-committed deductions would still be stuck.)
+            for (CheckoutItem item : deducted) {
+                try {
+                    cacheService.deleteCache(item.productId());
+                    inventoryRepository.restoreStock(item.productId(), item.qty());
+                    cacheService.scheduleSecondDeletion(item.productId());
+                    log.info("[Checkout][Compensation] Restored productId={} qty={}",
+                            item.productId(), item.qty());
+                } catch (Exception compensationEx) {
+                    // Compensation itself failed — stock may leak.
+                    // Production fix: transactional outbox / durable compensation queue.
+                    log.error("[Checkout][Compensation] FAILED to restore productId={} qty={}: {}",
+                            item.productId(), item.qty(), compensationEx.getMessage());
+                }
+            }
+            throw ex; // re-throw so controller maps to the right HTTP status
+        }
+    }
+
+    /**
+     * Loads cart items in a read-only transaction so lazy-loaded Product associations
+     * are reachable. Validates ACTIVE status and snapshots prices.
+     * Must be called via 'self' so the @Transactional proxy intercepts it.
+     */
+    @Transactional(readOnly = true)
+    public CartSnapshot loadCartSnapshot(Long userId) {
         Cart cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cart not found for user " + userId));
-
-        List<CartItem> cartItems = cartItemRepository.findByCartId(cart.getId());
-        if (cartItems.isEmpty()) {
+        List<CartItem> items = cartItemRepository.findByCartId(cart.getId());
+        if (items.isEmpty()) {
             throw new IllegalArgumentException("Cart is empty — nothing to checkout");
         }
-
-        // Snapshot: { productId, quantity, price, productRef }
-        // Validate ACTIVE status BEFORE any deduction (no rollback needed yet).
-        record Snapshot(Long productId, int qty, BigDecimal price, Product product) {}
-        List<Snapshot> snapshots = new ArrayList<>();
-        for (CartItem ci : cartItems) {
-            Product p = ci.getProduct();
+        List<CheckoutItem> checkoutItems = new ArrayList<>();
+        for (CartItem ci : items) {
+            Product p = ci.getProduct(); // lazy-load safe inside @Transactional
             if (p.getStatus() != ProductStatus.ACTIVE) {
-                throw new IllegalArgumentException("Product '" + p.getName() + "' (id=" + p.getId() + ") is unavailable");
+                throw new IllegalArgumentException(
+                        "Product '" + p.getName() + "' (id=" + p.getId() + ") is unavailable");
             }
-            snapshots.add(new Snapshot(p.getId(), ci.getQuantity(), p.getPrice(), p));
+            checkoutItems.add(new CheckoutItem(p.getId(), ci.getQuantity(), p.getPrice()));
         }
+        return new CartSnapshot(cart.getId(), checkoutItems);
+    }
 
-        // ── Steps 4-6: Sequential deduction (no lock in Step 7) ──────────────
-        //
-        // In Step 7 the whole method is @Transactional, so a SoldOutException here
-        // causes an automatic rollback of any previously deducted stock.
-        // Step 8 restructures: each deduction will commit under its own per-product
-        // Redisson lock, and manual compensation (restoreStock) handles the unwind.
-        //
-        // NOTE: No cache invalidation here (Step 8 adds first-deletion + async second-deletion).
-
-        for (Snapshot s : snapshots) {
-            // Step 6c: conditional UPDATE — the MySQL safety net against overselling
-            int rows = inventoryRepository.deductStock(s.productId(), s.qty());
-            if (rows == 0) {
-                // sold out — exception triggers @Transactional rollback, restoring prior deductions
-                throw new SoldOutException(s.productId());
-            }
-            log.debug("[Checkout] deducted productId={} qty={}", s.productId(), s.qty());
-        }
-
-        // ── Step 7: Create order + order items + clear cart (one @Transactional block) ──
-        BigDecimal total = snapshots.stream()
-                .map(s -> s.price().multiply(BigDecimal.valueOf(s.qty())))
+    /**
+     * Creates Order + OrderItems + clears cart + publishes domain event in one transaction.
+     * Must be called via 'self' so the @Transactional proxy intercepts it.
+     * Public visibility is required for Spring's proxy to wrap it — treat as package-internal.
+     */
+    @Transactional
+    public OrderResponse persistOrder(List<CheckoutItem> items, Long userId, Long cartId) {
+        BigDecimal total = items.stream()
+                .map(i -> i.price().multiply(BigDecimal.valueOf(i.qty())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Order order = new Order();
@@ -113,41 +218,43 @@ public class OrderService {
         order.setCreatedAt(LocalDateTime.now());
         orderRepository.save(order);
 
-        for (Snapshot s : snapshots) {
-            OrderItem item = new OrderItem();
-            item.setOrder(order);
-            item.setProduct(s.product());
-            item.setQuantity(s.qty());
-            item.setPriceAtPurchase(s.price());  // snapshot — immune to future price changes
-            orderItemRepository.save(item);
+        for (CheckoutItem item : items) {
+            OrderItem oi = new OrderItem();
+            oi.setOrder(order);
+            // getReferenceById: returns a proxy (no extra SELECT); valid within this tx
+            oi.setProduct(productRepository.getReferenceById(item.productId()));
+            oi.setQuantity(item.qty());
+            oi.setPriceAtPurchase(item.price()); // snapshot — immune to future price changes
+            orderItemRepository.save(oi);
         }
 
-        cartItemRepository.deleteByCartId(cart.getId());
+        cartItemRepository.deleteByCartId(cartId);
 
-        // ── Step 7d: Publish in-process event; bridge forwards to Kafka AFTER_COMMIT (Step 9) ──
+        // Publish in-process event; @TransactionalEventListener(AFTER_COMMIT) bridge
+        // forwards to Kafka only after this transaction commits (Step 9 wires the send).
         eventPublisher.publishEvent(
                 new OrderCreatedDomainEvent(this, order.getId(), userId, order.getCreatedAt()));
 
-        log.info("[Checkout] order created: orderId={} userId={} total={} items={}",
-                order.getId(), userId, total, snapshots.size());
+        log.info("[Checkout] Order created: orderId={} userId={} total={} items={}",
+                order.getId(), userId, total, items.size());
 
+        // findByOrderId inside the same tx so lazy product proxies are resolvable
         return toDetailResponse(order, orderItemRepository.findByOrderId(order.getId()));
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Pay — mock payment trigger
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     /**
-     * Conditional UPDATE: exactly one of {pay, expiry-cancel} wins.
-     * rowsAffected = 0  → order already cancelled/paid → 409
+     * Conditional UPDATE: exactly one of {/pay, OrderExpiryScheduler} wins.
+     * rowsAffected = 0  → already PAID or CANCELLED → 409.
      * rowsAffected = 1  → PAID; publishes PaymentCompletedDomainEvent AFTER_COMMIT.
      */
     @Transactional
     public OrderResponse pay(Long orderId) {
         Long userId = resolveUserId();
 
-        // Ownership check — user can only pay their own orders (ADMIN can pay any)
         Order existing = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         if (!isAdmin() && !existing.getUserId().equals(userId)) {
@@ -155,30 +262,27 @@ public class OrderService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-
-        // Race-safe payment — returns 0 if already PAID or CANCELLED
         int rows = orderRepository.payIfPending(orderId, now);
         if (rows == 0) {
             throw new IllegalStateException(
-                    "Order " + orderId + " cannot be paid (status is not PENDING — already paid or cancelled)");
+                    "Order " + orderId
+                    + " cannot be paid (status is not PENDING — already paid or cancelled)");
         }
 
-        // Re-read after JPQL UPDATE (clearAutomatically=true ensures fresh state)
+        // clearAutomatically = true on payIfPending ensures this re-read sees PAID + paidAt
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
-        // Publish in-process event; bridge forwards to Kafka AFTER_COMMIT (Step 9)
         eventPublisher.publishEvent(
                 new PaymentCompletedDomainEvent(this, order.getId(), userId, order.getPaidAt()));
 
         log.info("[Pay] orderId={} userId={} paidAt={}", order.getId(), userId, order.getPaidAt());
-
         return toDetailResponse(order, orderItemRepository.findByOrderId(orderId));
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Read
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     public Page<OrderResponse> getMyOrders(Pageable pageable) {
         Long userId = resolveUserId();
@@ -188,21 +292,18 @@ public class OrderService {
     @Transactional(readOnly = true)
     public OrderResponse getOrder(Long orderId) {
         Long userId = resolveUserId();
-
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
-
-        // Owner check — 404 (not 403) to avoid leaking order existence to non-owners
+        // 404 (not 403) for non-owners — avoids leaking that the order exists
         if (!isAdmin() && !order.getUserId().equals(userId)) {
             throw new ResourceNotFoundException("Order not found: " + orderId);
         }
-
         return toDetailResponse(order, orderItemRepository.findByOrderId(orderId));
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Helpers
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     protected Long resolveUserId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -215,7 +316,7 @@ public class OrderService {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 
-    /** List-view response — no items loaded (avoids N+1 on paginated lists). */
+    /** List-view response — items not loaded (avoids N+1 on paginated lists). */
     private OrderResponse toListResponse(Order order) {
         OrderResponse res = new OrderResponse();
         res.setId(order.getId());
@@ -227,7 +328,7 @@ public class OrderService {
         return res;
     }
 
-    /** Detail-view response — includes order items. */
+    /** Detail-view response — includes order items with productName + lineTotal. */
     private OrderResponse toDetailResponse(Order order, List<OrderItem> items) {
         OrderResponse res = toListResponse(order);
         res.setItems(items.stream().map(this::toItemResponse).toList());
@@ -245,7 +346,7 @@ public class OrderService {
         return r;
     }
 
-    // Kept for backward compatibility with existing callers (Step 4 stubs referenced toResponse)
+    // Kept for backward compatibility with any callers referencing the old signature
     protected OrderResponse toResponse(Order order) {
         return toListResponse(order);
     }

@@ -365,11 +365,79 @@ If a service published to Kafka *inside* the transaction and the transaction rol
 
 ---
 
+---
+
+## ✅ Step 8 — Redisson Lock + Cache-Aside + Delayed Double Deletion in Checkout
+**Status:** Complete
+
+### What changed from Step 7
+
+| Concern | Step 7 | Step 8 |
+|---------|--------|--------|
+| Outer `@Transactional` on `checkout()` | ✅ one big tx, auto rollback | ❌ removed — each deduction is its own tx |
+| Per-product Redisson lock | ❌ none | ✅ `lock:product:{id}` (5s wait, 10s lease) |
+| Cache first-deletion (before MySQL write) | ❌ none | ✅ `cacheService.deleteCache(productId)` |
+| Async second-deletion (~500ms later) | ❌ none | ✅ `cacheService.scheduleSecondDeletion(productId)` |
+| Compensation on failure | Automatic via tx rollback | Manual `restoreStock` + cache invalidation |
+
+### Why no outer `@Transactional` on `checkout()`
+
+Each deduction commits independently under its own per-product lock. If the order-creation step fails *after* some deductions have already been committed, a `@Transactional` rollback on the outer method cannot undo those committed writes — only explicit `restoreStock` calls can. Removing the outer transaction also maximises concurrency: checkouts of different products never block each other at the DB-transaction level.
+
+### Transaction structure
+
+```
+checkout()  — no @Transactional
+  │
+  ├─ self.loadCartSnapshot()           @Transactional(readOnly=true)
+  │    Lazy-loads Product for each CartItem; validates ACTIVE; snapshots prices
+  │
+  ├─ FOR EACH item:
+  │    acquire lock:product:{id}
+  │    deleteCache(id)                 ← first deletion
+  │    inventoryRepository.deductStock()  @Transactional on repo method
+  │    release lock
+  │    scheduleSecondDeletion(id)      ← async ~500ms, @Async("cacheEvictExecutor")
+  │
+  ├─ self.persistOrder()               @Transactional
+  │    save Order + OrderItems + deleteByCartId + publishEvent
+  │
+  └─ CATCH any exception:
+       FOR EACH committed deduction:
+         deleteCache(id)
+         restoreStock(id, qty)         @Transactional on repo method
+         scheduleSecondDeletion(id)
+       re-throw
+```
+
+### Self-injection pattern
+
+`loadCartSnapshot()` and `persistOrder()` are `@Transactional` methods on `OrderService` itself. Calling `this.method()` bypasses Spring's AOP proxy — the transaction annotation is ignored. Solution: inject the proxy back as a field:
+
+```java
+@Lazy @Autowired
+private OrderService self;
+```
+
+`@Lazy` prevents a circular dependency during bean construction. Calling `self.loadCartSnapshot()` and `self.persistOrder()` goes through the proxy and honours `@Transactional`. This is the standard Spring idiom for transactional self-calls.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `repository/jpa/ProductInventoryRepository.java` | Added `@Transactional` to `deductStock` and `restoreStock` — each call commits its own short tx when invoked from a non-transactional context |
+| `service/OrderService.java` | Removed outer `@Transactional` from `checkout()`; added `RedissonClient`, `ProductCacheService`, `ProductRepository` dependencies; added `@Lazy @Autowired OrderService self`; added `loadCartSnapshot()` + `persistOrder()` helper methods; rewrote deduction loop with lock + cache-aside; added manual compensation block |
+
+### Residual gap (documented)
+If the compensation block itself fails (MySQL unreachable), deducted stock leaks. The production fix is a durable compensation queue / transactional outbox pattern — out of scope but called out in README.
+
+---
+
 ## 📋 Remaining Steps
 
 | Step | What | Status |
 |------|------|--------|
-| 8 | Redisson lock + cache-aside + delayed double deletion | ⬜ Pending |
+| 8 | Redisson lock + cache-aside + delayed double deletion | ✅ Complete |
 | 9 | Kafka — async order-created + payment-completed pipeline | ⬜ Pending |
 | 10 | MongoDB — order_activity_log + user_action_log filter | ⬜ Pending |
 | 11 | OrderExpiryScheduler + conditional UPDATE on /pay | ⬜ Pending |

@@ -9,23 +9,34 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-// Step 10: write order_activity_log to MongoDB on each event
-// Step 9 : payment-completed → update order status PENDING → PAID
+/**
+ * Consumes order-created and payment-completed events from Kafka.
+ *
+ * Step 9  — receives and logs events; confirms the full publish-after-commit pipeline works.
+ * Step 10 — adds MongoDB writes: order_activity_log on each event.
+ *
+ * Note: order status is NOT updated here. The /pay endpoint already performs the
+ * PENDING → PAID transition via a synchronous conditional UPDATE before the
+ * payment-completed event is published. The consumer's job is downstream processing
+ * (logging, notifications) — not state mutation.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class OrderEventConsumer {
 
     private final ObjectMapper objectMapper;
+    // Step 10: inject OrderActivityLogRepository here
 
     @KafkaListener(topics = KafkaTopicConfig.ORDER_CREATED_TOPIC, groupId = "flash-sale-group")
     public void handleOrderCreated(String message) {
         try {
             OrderCreatedEvent event = objectMapper.readValue(message, OrderCreatedEvent.class);
-            log.info("[Kafka] order-created received: orderId={} userId={}", event.getOrderId(), event.getUserId());
-            // TODO Step 10: write to MongoDB order_activity_log
+            log.info("[Kafka][order-created] orderId={} userId={} createdAt={}",
+                    event.getOrderId(), event.getUserId(), event.getCreatedAt());
+            // Step 10: write { orderId, userId, event: "ORDER_CREATED", timestamp } to MongoDB
         } catch (Exception e) {
-            log.error("[Kafka] Failed to process order-created: {}", e.getMessage());
+            log.error("[Kafka][order-created] Failed to process message: {}", e.getMessage());
         }
     }
 
@@ -33,11 +44,11 @@ public class OrderEventConsumer {
     public void handlePaymentCompleted(String message) {
         try {
             PaymentCompletedEvent event = objectMapper.readValue(message, PaymentCompletedEvent.class);
-            log.info("[Kafka] payment-completed received: orderId={} userId={}", event.getOrderId(), event.getUserId());
-            // TODO Step 9 : update Order status PENDING → PAID
-            // TODO Step 10: write to MongoDB order_activity_log
+            log.info("[Kafka][payment-completed] orderId={} userId={} paidAt={}",
+                    event.getOrderId(), event.getUserId(), event.getPaidAt());
+            // Step 10: write { orderId, userId, event: "PAYMENT_COMPLETED", timestamp } to MongoDB
         } catch (Exception e) {
-            log.error("[Kafka] Failed to process payment-completed: {}", e.getMessage());
+            log.error("[Kafka][payment-completed] Failed to process message: {}", e.getMessage());
         }
     }
 }

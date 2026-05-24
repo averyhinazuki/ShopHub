@@ -433,12 +433,74 @@ If the compensation block itself fails (MySQL unreachable), deducted stock leaks
 
 ---
 
+---
+
+## ✅ Step 9 — Kafka Async Pipeline (order-created + payment-completed)
+**Status:** Complete
+
+### What was wired
+
+The publish-after-commit infrastructure was already in place from Steps 7–8 (domain events + bridge stub + consumer skeleton). Step 9 replaces the bridge stubs with actual Kafka sends.
+
+### Full event flow (end-to-end)
+
+```
+checkout() / pay()
+  │
+  ├─ DB writes commit  (@Transactional)
+  │
+  ├─ ApplicationEventPublisher.publishEvent(OrderCreatedDomainEvent)
+  │   or publishEvent(PaymentCompletedDomainEvent)
+  │
+  └─ OrderEventKafkaBridge  (@TransactionalEventListener AFTER_COMMIT)
+       Fires ONLY after the DB transaction is durable.
+       Calls OrderEventProducer.sendOrderCreatedEvent()
+         or OrderEventProducer.sendPaymentCompletedEvent()
+       which sends to Kafka asynchronously via KafkaTemplate.
+       └─ KafkaTemplate.send() returns a CompletableFuture;
+          success/failure logged by whenComplete callback.
+
+OrderEventConsumer  (@KafkaListener)
+  ├─ handleOrderCreated()     → logs orderId, userId, createdAt
+  └─ handlePaymentCompleted() → logs orderId, userId, paidAt
+  (Step 10 adds MongoDB writes here)
+```
+
+### Why the consumer does NOT update order status
+
+An earlier design comment suggested the consumer should drive `PENDING → PAID`. That's been removed. The `/pay` endpoint already performs the conditional UPDATE synchronously before publishing the event — the DB is already `PAID` by the time the consumer receives the message. The consumer's role is downstream processing (logging, notifications), not state mutation.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `kafka/producer/OrderEventKafkaBridge.java` | Injected `OrderEventProducer`; replaced log-only stubs with `sendOrderCreatedEvent()` and `sendPaymentCompletedEvent()` calls |
+| `kafka/consumer/OrderEventConsumer.java` | Removed stale TODO about status update; cleaned up log format; added clear Step 10 placeholders |
+
+### Residual gap (documented)
+If the JVM crashes between the DB commit and the Kafka send, the event is lost. The transactional outbox pattern (write event to an `outbox` table in the same tx, separate poller publishes to Kafka) is the production fix — out of scope, will be noted in README.
+
+### How to verify
+Restart the app and run a checkout + pay. In the Spring Boot logs you should see:
+
+```
+[Bridge] Forwarding order-created to Kafka: orderId=X
+[Kafka] order-created sent: orderId=X partition=N offset=M
+[Kafka][order-created] orderId=X userId=Y createdAt=...
+
+[Bridge] Forwarding payment-completed to Kafka: orderId=X
+[Kafka] payment-completed sent: orderId=X partition=N offset=M
+[Kafka][payment-completed] orderId=X userId=Y paidAt=...
+```
+
+---
+
 ## 📋 Remaining Steps
 
 | Step | What | Status |
 |------|------|--------|
 | 8 | Redisson lock + cache-aside + delayed double deletion | ✅ Complete |
-| 9 | Kafka — async order-created + payment-completed pipeline | ⬜ Pending |
+| 9 | Kafka — async order-created + payment-completed pipeline | ✅ Complete |
 | 10 | MongoDB — order_activity_log + user_action_log filter | ⬜ Pending |
 | 11 | OrderExpiryScheduler + conditional UPDATE on /pay | ⬜ Pending |
 | 12 | Vanilla JS frontend | ⬜ Pending |

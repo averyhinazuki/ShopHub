@@ -1,0 +1,60 @@
+spring:
+  application:
+    name: flash-sale-system
+
+  # MySQL
+  datasource:
+    url: jdbc:mysql://localhost:3306/flash_sale_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+
+  # MongoDB
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/flash_sale_logs
+
+  # Redis
+  redis:
+    host: localhost
+    port: 6379
+
+  # Kafka
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: flash-sale-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  # Jackson — serialize LocalDateTime as ISO string, not [year,month,day,...] array
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+# JWT config (custom — not a Spring key)
+app:
+  jwt:
+    secret: your-256-bit-secret-key-replace-this-in-production-please
+    access-expiration-ms: 900000     # 15 minutes
+    refresh-expiration-ms: 86400000  # 1 day
+  order:
+    pending-timeout-minutes: 15
+    expiry-job-interval-seconds: 60
+    expiry-job-batch-size: 100
+
+server:
+  port: 8080

@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,8 +20,11 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT o.id FROM Order o WHERE o.status = :status AND o.createdAt < :before")
     List<Long> findExpiredOrderIds(OrderStatus status, LocalDateTime before, Pageable pageable);
 
-    // Race-safe cancellation: returns 1 if we claimed it, 0 if already paid/cancelled
-    // clearAutomatically = true so findById after this UPDATE sees the new status
+    // Race-safe cancellation: returns 1 if we claimed it, 0 if already paid/cancelled.
+    // @Transactional required so this can be called from a non-transactional context
+    // (e.g. OrderExpiryScheduler) and still commit atomically.
+    // clearAutomatically = true so findById after this UPDATE sees the new status.
+    @Transactional
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Order o SET o.status = 'CANCELLED' WHERE o.id = :id AND o.status = 'PENDING'")
     int cancelIfPending(Long id);

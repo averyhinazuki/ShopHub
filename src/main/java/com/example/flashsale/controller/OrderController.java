@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.*;
  *          GET  /api/orders/{id}       (owner-only; ADMIN can read any)
  *          POST /api/orders/{id}/pay   (conditional UPDATE race guard)
  * Step 8 : + Redisson lock + cache-aside in checkout
- * Step 11: GET  /api/orders            [ADMIN] + OrderExpiryScheduler
+ * Step 11: GET  /api/orders            [ADMIN] all orders (paginated)
+ *          + OrderExpiryScheduler (separate class)
  */
 @RestController
 @RequestMapping("/api/orders")
@@ -33,6 +34,15 @@ public class OrderController {
     @GetMapping("/me")
     public ResponseEntity<Page<OrderResponse>> getMyOrders(Pageable pageable) {
         return ResponseEntity.ok(orderService.getMyOrders(pageable));
+    }
+
+    /**
+     * GET /api/orders — all orders across all users [ADMIN only].
+     * Supports ?page=&size=&sort= via Spring's Pageable resolution.
+     */
+    @GetMapping
+    public ResponseEntity<Page<OrderResponse>> getAllOrders(Pageable pageable) {
+        return ResponseEntity.ok(orderService.getAllOrders(pageable));
     }
 
     /**

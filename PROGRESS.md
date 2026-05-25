@@ -578,6 +578,74 @@ Expected documents:
 
 ---
 
+---
+
+## ✅ Step 11 — OrderExpiryScheduler + GET /api/orders [ADMIN]
+**Status:** Complete
+
+### What was added
+
+**`OrderExpiryScheduler`** — a `@Scheduled` background job that runs every `expiry-job-interval-seconds` (60 s by default) with a 30 s startup delay. It scans for PENDING orders older than `pending-timeout-minutes` (15 min) in batches of up to `expiry-job-batch-size` (100), and for each:
+
+1. **Atomically claims the cancellation** via `cancelIfPending` — a conditional UPDATE (`WHERE status = 'PENDING'`). If `rowsAffected = 0`, the user paid in the same instant; skip entirely. This is the race guard between `/pay` and the expiry job — exactly one of the two wins.
+2. **Loads userId + item data** via lightweight queries (no lazy loading).
+3. **Restores stock per item** under the same `lock:product:{id}` Redisson lock used by checkout and admin inventory PATCH — so the restore cannot race with a concurrent checkout on the same product. Full cache-aside applied: first-deletion → `restoreStock` → second-deletion (async).
+4. **Writes `EXPIRED_CANCELLED`** to MongoDB `order_activity_log` (best-effort — failure never aborts the job).
+
+**`GET /api/orders` [ADMIN]** — paginated list of all orders across all users. Guarded by `@PreAuthorize("hasRole('ADMIN')")` in `OrderService.getAllOrders()`.
+
+### Race guard — /pay vs expiry job
+
+```
+Timeline A — user pays before expiry fires:
+  /pay: payIfPending(orderId)  → rowsAffected=1  → PAID
+  job:  cancelIfPending(orderId) → rowsAffected=0  → skipped (order already PAID)
+
+Timeline B — expiry fires before user pays:
+  job:  cancelIfPending(orderId) → rowsAffected=1  → CANCELLED; stock restored
+  /pay: payIfPending(orderId)  → rowsAffected=0  → 409 to user ("already cancelled")
+```
+
+The conditional UPDATE is the atomicity primitive. No locking between `/pay` and the expiry job is needed — MySQL row-level locking on the UPDATE ensures exactly one writer wins.
+
+### Scheduler config (already in application.yml)
+
+```yaml
+app:
+  order:
+    pending-timeout-minutes: 15
+    expiry-job-interval-seconds: 60
+    expiry-job-batch-size: 100
+```
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `config/AsyncConfig.java` | Added `@EnableScheduling` |
+| `repository/jpa/OrderRepository.java` | Added `@Transactional` to `cancelIfPending` — allows the scheduler (non-transactional context) to call it without a "no active transaction" error |
+| `repository/jpa/OrderItemRepository.java` | Added `findProductIdAndQuantityByOrderId` — JPQL projection query returning `[productId, quantity]` pairs; avoids LazyInitializationException when called outside a Hibernate session |
+| `scheduler/OrderExpiryScheduler.java` | **New** — full expiry job (see design above) |
+| `service/OrderService.java` | Added `getAllOrders(Pageable)` with `@PreAuthorize("hasRole('ADMIN')")` |
+| `controller/OrderController.java` | Added `GET /api/orders` → `getAllOrders()` |
+
+### How to verify
+
+**Expiry job:** temporarily set `pending-timeout-minutes: 0` in `application.yml` and restart. After ~30 s the scheduler fires. Any PENDING order immediately hits the cutoff — you should see:
+```
+[Expiry] Found N expired PENDING order(s) — processing
+[Expiry] Cancelled orderId=X
+[Expiry] Restored productId=Y qty=Z for orderId=X
+```
+And in MongoDB:
+```js
+db.order_activity_log.find({ event: "EXPIRED_CANCELLED" })
+```
+
+**Admin endpoint:** login as admin and call `GET /api/orders` — returns all orders paginated. Non-admin gets 403.
+
+---
+
 ## 📋 Remaining Steps
 
 | Step | What | Status |
@@ -585,6 +653,6 @@ Expected documents:
 | 8 | Redisson lock + cache-aside + delayed double deletion | ✅ Complete |
 | 9 | Kafka — async order-created + payment-completed pipeline | ✅ Complete |
 | 10 | MongoDB — order_activity_log + user_action_log filter | ✅ Complete |
-| 11 | OrderExpiryScheduler + conditional UPDATE on /pay | ⬜ Pending |
+| 11 | OrderExpiryScheduler + GET /api/orders [ADMIN] | ✅ Complete |
 | 12 | Vanilla JS frontend | ⬜ Pending |
 | 13 | JMeter stress test + README with benchmark results | ⬜ Pending |

@@ -19,6 +19,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -287,6 +288,12 @@ public class OrderService {
     public Page<OrderResponse> getMyOrders(Pageable pageable) {
         Long userId = resolveUserId();
         return orderRepository.findByUserId(userId, pageable).map(this::toListResponse);
+    }
+
+    /** Step 11 — all orders across all users; ADMIN only. */
+    @PreAuthorize("hasRole('ADMIN')")
+    public Page<OrderResponse> getAllOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable).map(this::toListResponse);
     }
 
     @Transactional(readOnly = true)

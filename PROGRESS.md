@@ -495,13 +495,96 @@ Restart the app and run a checkout + pay. In the Spring Boot logs you should see
 
 ---
 
+---
+
+## ✅ Step 10 — MongoDB Logging (order_activity_log + user_action_log)
+**Status:** Complete
+
+### What was added
+
+Two MongoDB write paths:
+
+**1. Order activity log (via Kafka consumer)**
+Each Kafka event now persists a document to `order_activity_log` in addition to logging to the console. The Kafka consumer is the right place for this — it already receives the event after the DB transaction commits, keeping the MongoDB write fully decoupled from the HTTP request path.
+
+**2. User action log (via servlet filter)**
+`UserActionLogFilter` runs inside the Spring Security filter chain, after `JwtFilter`. For every authenticated request it fires a fire-and-forget async write to `user_action_log` via `UserActionLogService`. Anonymous requests (public product browsing) are skipped — no `userId` to associate.
+
+### Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| `UserActionLogFilter` is NOT `@Component` | `@Component` causes Spring Boot to auto-register the filter as a standalone servlet filter AND it gets added to the security chain — it would fire twice per request. Creating it via `new` in `SecurityConfig` and adding via `addFilterAfter` means exactly one registration inside the security chain. |
+| `addFilterAfter(…, JwtFilter.class)` | Guarantees `SecurityContextHolder` already has the resolved `Authentication` when the filter runs. |
+| `filterChain.doFilter()` first, then log | The log entry is written after the request is processed. The async write has zero impact on response latency. |
+| `@Async("cacheEvictExecutor")` on `UserActionLogService.logAsync()` | Reuses the existing thread pool (2–8 threads, queue=200) rather than adding a second pool for a lightweight fire-and-forget task. |
+| `UserRepository.findByUsername()` inside async | Resolves `Long userId` from the JWT `sub` claim (username) without coupling the filter to the JPA layer directly. |
+
+### Event flow — order_activity_log
+
+```
+checkout() → Kafka order-created → OrderEventConsumer.handleOrderCreated()
+  └─ activityLogRepository.save({ orderId, userId, event: "ORDER_CREATED", timestamp: createdAt })
+
+pay() → Kafka payment-completed → OrderEventConsumer.handlePaymentCompleted()
+  └─ activityLogRepository.save({ orderId, userId, event: "PAYMENT_COMPLETED", timestamp: paidAt })
+```
+
+### Event flow — user_action_log
+
+```
+Any authenticated HTTP request
+  │
+  ├─ JwtFilter            → sets SecurityContextHolder
+  ├─ UserActionLogFilter  → runs chain first, then:
+  │    SecurityContextHolder.getAuthentication()
+  │    if authenticated (not anonymous):
+  │      userActionLogService.logAsync(username, "METHOD /path", remoteAddr)
+  │        └─ @Async: userRepository.findByUsername(username)
+  │                   → userActionLogRepository.save({ userId, action, timestamp, ip })
+  └─ (HTTP response already sent)
+```
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `kafka/consumer/OrderEventConsumer.java` | Injected `OrderActivityLogRepository`; writes `OrderActivityLog` document on ORDER_CREATED and PAYMENT_COMPLETED events |
+| `service/UserActionLogService.java` | **New** — `@Async("cacheEvictExecutor")` service; resolves `userId` from username, saves `UserActionLog` to MongoDB |
+| `filter/UserActionLogFilter.java` | **New** — `OncePerRequestFilter`; runs after JwtFilter in security chain; fires async log for authenticated requests |
+| `security/config/SecurityConfig.java` | Injected `UserActionLogService`; instantiates `UserActionLogFilter` and registers with `addFilterAfter(…, JwtFilter.class)` |
+
+### How to verify
+
+After restart, do a checkout + pay with a logged-in user. Then query MongoDB:
+
+```js
+// In mongosh (connects to flash-mongo container):
+use flash_sale
+db.order_activity_log.find().sort({ timestamp: -1 }).limit(5)
+db.user_action_log.find().sort({ timestamp: -1 }).limit(10)
+```
+
+Expected documents:
+```json
+// order_activity_log
+{ "orderId": 57, "userId": 53, "event": "ORDER_CREATED",      "timestamp": "2026-05-25T..." }
+{ "orderId": 57, "userId": 53, "event": "PAYMENT_COMPLETED",  "timestamp": "2026-05-25T..." }
+
+// user_action_log
+{ "userId": 53, "action": "POST /api/orders/checkout", "timestamp": "...", "ip": "127.0.0.1" }
+{ "userId": 53, "action": "POST /api/orders/57/pay",   "timestamp": "...", "ip": "127.0.0.1" }
+```
+
+---
+
 ## 📋 Remaining Steps
 
 | Step | What | Status |
 |------|------|--------|
 | 8 | Redisson lock + cache-aside + delayed double deletion | ✅ Complete |
 | 9 | Kafka — async order-created + payment-completed pipeline | ✅ Complete |
-| 10 | MongoDB — order_activity_log + user_action_log filter | ⬜ Pending |
+| 10 | MongoDB — order_activity_log + user_action_log filter | ✅ Complete |
 | 11 | OrderExpiryScheduler + conditional UPDATE on /pay | ⬜ Pending |
 | 12 | Vanilla JS frontend | ⬜ Pending |
 | 13 | JMeter stress test + README with benchmark results | ⬜ Pending |

@@ -35,7 +35,7 @@
 
         <p v-if="createError" class="sm:col-span-2 text-sm text-red-500">{{ createError }}</p>
 
-        <button type="submit" :disabled="creating"
+        <button type="submit" :disabled="creating || uploadingImage"
           class="sm:col-span-2 bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium
                  hover:bg-blue-700 disabled:opacity-50 transition">
           {{ creating ? 'Creating…' : 'Create Product' }}
@@ -110,6 +110,7 @@ async function handleImageUpload(event) {
     uploadError.value = 'Image upload failed.'
   } finally {
     uploadingImage.value = false
+    event.target.value = ''
   }
 }
 

@@ -30,6 +30,7 @@ public interface ProductInventoryRepository extends JpaRepository<ProductInvento
     int restoreStock(Long productId, int qty);
 
     // Admin inventory adjust — delta can be positive (restock) or negative (correction/write-off)
+    @Transactional
     @Modifying
     @Query("UPDATE ProductInventory pi " +
            "SET pi.availableStock = pi.availableStock + :delta, " +

@@ -1,6 +1,6 @@
 spring:
   application:
-    name: flash-sale-system
+    name: shop-hub
 
   # MySQL
   datasource:

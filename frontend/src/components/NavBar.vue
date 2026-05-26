@@ -2,7 +2,7 @@
   <nav class="border-b border-gray-100 bg-white/80 backdrop-blur sticky top-0 z-50">
     <div class="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
       <RouterLink to="/" class="font-semibold text-gray-900 tracking-tight text-sm">
-        FlashSale
+        ShopHub
       </RouterLink>
 
       <div class="flex items-center gap-6 text-sm text-gray-500">

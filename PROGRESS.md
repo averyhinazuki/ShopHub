@@ -715,6 +715,38 @@ SELECT available_stock FROM product_inventory WHERE product_id = <PRODUCT_ID>;
 
 ---
 
+## ✅ Step 12 — Vue 3 Frontend
+**Status:** Complete  
+**Spec:** `docs/superpowers/specs/2026-05-26-vue-frontend-design.md`
+
+### Stack
+- Vue 3 + Vite + Vue Router 4 + Pinia 2 + Tailwind CSS 3 + Axios
+- Standalone project at `frontend/`
+- Vite dev proxy: `/api` → `http://localhost:8080`
+- Apple-minimal UI: system-ui font, white bg, blue-600 accent, rounded cards
+
+### Views
+
+| View | Route | Auth |
+|---|---|---|
+| `HomeView` | `/` | public |
+| `LoginView` | `/login` | redirect if logged in |
+| `RegisterView` | `/register` | redirect if logged in |
+| `CartView` | `/cart` | requires auth |
+| `OrdersView` | `/orders` | requires auth |
+| `admin/ProductsView` | `/admin/products` | requires ADMIN |
+| `admin/InventoryView` | `/admin/inventory` | requires ADMIN |
+| `admin/OrdersView` | `/admin/orders` | requires ADMIN |
+
+### Stores
+- `auth.js` — tokens (localStorage), role, login/register/logout/refresh
+- `cart.js` — item count for nav badge
+
+### Services
+- `api.js` — axios instance, injects Bearer token, auto-refresh on 401
+
+---
+
 ## 📋 Remaining Steps
 
 | Step | What | Status |
@@ -723,5 +755,5 @@ SELECT available_stock FROM product_inventory WHERE product_id = <PRODUCT_ID>;
 | 9 | Kafka — async order-created + payment-completed pipeline | ✅ Complete |
 | 10 | MongoDB — order_activity_log + user_action_log filter | ✅ Complete |
 | 11 | OrderExpiryScheduler + GET /api/orders [ADMIN] | ✅ Complete |
-| 12 | Vanilla JS frontend | ⬜ Pending |
+| 12 | Vue 3 frontend (Vite + Vue Router + Pinia + Tailwind) | ✅ Complete |
 | 13 | JMeter stress test + README with benchmark results | ✅ Complete |

@@ -19,8 +19,15 @@ public class UploadController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
-    public ResponseEntity<Map<String, String>> upload(@RequestParam("file") MultipartFile file) throws IOException {
-        String url = cloudinaryService.upload(file);
-        return ResponseEntity.ok(Map.of("url", url));
+    public ResponseEntity<Map<String, String>> upload(@RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No file provided"));
+        }
+        try {
+            String url = cloudinaryService.upload(file);
+            return ResponseEntity.ok(Map.of("url", url));
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Image upload failed"));
+        }
     }
 }

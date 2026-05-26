@@ -49,7 +49,7 @@ spring:
 app:
   jwt:
     secret: your-256-bit-secret-key-replace-this-in-production-please
-    access-expiration-ms: 900000     # 15 minutes
+    access-expiration-ms: 300000     # 5 minutes
     refresh-expiration-ms: 86400000  # 1 day
   order:
     pending-timeout-minutes: 15

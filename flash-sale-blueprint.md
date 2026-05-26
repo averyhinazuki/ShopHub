@@ -23,7 +23,7 @@ Redis 7       — read cache only (cache-aside, NOT stock authority)
 Redisson 3.x  — distributed lock for concurrency control on writes
 Kafka         — async order/payment event pipeline (spring-kafka)
 Docker + docker-compose
-Frontend: plain HTML + Vanilla JS
+Frontend: Vue 3 + Vite + Vue Router + Pinia + Tailwind CSS (standalone project at frontend/)
 Testing: JMeter for stress test
 ```
 
@@ -452,27 +452,32 @@ flash-sale-system/
 │       ├── SoldOutException.java
 │       └── ResourceNotFoundException.java
 ├── src/main/resources/
-│   ├── application.yml
-│   └── static/                      ← frontend
-│       ├── index.html               (product list)
-│       ├── login.html
-│       ├── register.html
-│       ├── cart.html
-│       ├── orders.html
-│       ├── admin/
-│       │   ├── products.html        (create / update products, includes initialStock)
-│       │   ├── inventory.html       (PATCH inventory: delta + reason)
-│       │   └── orders.html          (view all orders)
-│       └── js/
-│           ├── api.js               (shared fetch wrapper + JWT header)
-│           ├── auth.js              (login / register / token storage)
-│           ├── products.js
-│           ├── cart.js
-│           ├── orders.js
-│           └── admin/
-│               ├── products.js
-│               ├── inventory.js
-│               └── orders.js
+│   └── application.yml
+└── frontend/                        ← Vue 3 standalone project
+    ├── index.html
+    ├── vite.config.js               (proxy /api → :8080)
+    ├── tailwind.config.js
+    ├── package.json
+    └── src/
+        ├── main.js
+        ├── App.vue                  (NavBar + RouterView)
+        ├── assets/style.css         (Tailwind directives)
+        ├── router/index.js          (routes + navigation guards)
+        ├── stores/
+        │   ├── auth.js              (Pinia: tokens, role, login/logout/refresh)
+        │   └── cart.js              (Pinia: cart item count for nav badge)
+        ├── services/api.js          (axios: Bearer token + 401 auto-refresh)
+        ├── components/NavBar.vue
+        └── views/
+            ├── HomeView.vue         (product grid, search, category filter)
+            ├── LoginView.vue
+            ├── RegisterView.vue
+            ├── CartView.vue         (line items, checkout, stock warnings)
+            ├── OrdersView.vue       (my orders, pay button)
+            └── admin/
+                ├── ProductsView.vue (create/edit products)
+                ├── InventoryView.vue(delta + reason PATCH)
+                └── OrdersView.vue   (all orders)
 └── jmeter/
     └── checkout-stress-test.jmx
 ```
@@ -545,5 +550,5 @@ flash-sale-system/
 - JWT secret: **kept in `application.yml`** as a literal for this dev/learning project (would be env-var-loaded in production)
 - Cart lifecycle: **created at registration** in the same tx as the user — every authenticated user always has a cart row
 - Cart-vs-stock check: **soft warning at add/update** (request accepted, response carries `STOCK_INSUFFICIENT` warning); **hard enforcement at checkout** via the conditional UPDATE
-- Frontend: **Vanilla JS** (plain HTML + JS, no framework); pages include public (login, register, products, cart, my orders) and admin (products, inventory, all orders)
+- Frontend: **Vue 3** (Vite + Vue Router + Pinia + Tailwind CSS); standalone project at `frontend/`; Vite dev proxy forwards `/api` to Spring Boot `:8080`; Apple-minimal aesthetic via Tailwind utilities
 - Teaching mode: **step-by-step**, one step at a time

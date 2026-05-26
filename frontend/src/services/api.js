@@ -18,10 +18,13 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !err.config._retry) {
       err.config._retry = true
       try {
+        console.log('[auth] access token expired, calling refresh...')
         await auth.refresh()
+        console.log('[auth] token refreshed, retrying request:', err.config.url)
         err.config.headers.Authorization = `Bearer ${auth.accessToken}`
         return api(err.config)
       } catch {
+        console.log('[auth] refresh failed, redirecting to login')
         auth.clear()
         window.location.href = '/login'
         return Promise.reject(err)

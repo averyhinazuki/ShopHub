@@ -21,8 +21,14 @@
         <input v-model="form.initialStock" type="number" min="0" placeholder="Initial stock" required
           class="border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 transition bg-white" />
 
-        <input v-model="form.imageUrl" placeholder="Image URL (optional)"
-          class="border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 transition bg-white" />
+        <div class="flex flex-col gap-2">
+          <input type="file" accept="image/*" @change="handleImageUpload"
+            class="border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm bg-white cursor-pointer" />
+          <img v-if="form.imageUrl" :src="form.imageUrl" alt="Preview"
+            class="h-24 w-24 object-cover rounded-xl border border-gray-200" />
+          <p v-if="uploadingImage" class="text-xs text-gray-400">Uploading…</p>
+          <p v-if="uploadError" class="text-xs text-red-500">{{ uploadError }}</p>
+        </div>
 
         <input v-model="form.description" placeholder="Description (optional)"
           class="border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 transition bg-white" />
@@ -68,6 +74,8 @@ const categories = ref([])
 const loading = ref(false)
 const creating = ref(false)
 const createError = ref('')
+const uploadingImage = ref(false)
+const uploadError = ref('')
 const form = reactive({
   name: '', categoryId: '', price: '', initialStock: '', imageUrl: '', description: ''
 })
@@ -86,6 +94,25 @@ async function fetchAll() {
   }
 }
 
+async function handleImageUpload(event) {
+  const file = event.target.files[0]
+  if (!file) return
+  uploadingImage.value = true
+  uploadError.value = ''
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await api.post('/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    form.imageUrl = res.data.url
+  } catch {
+    uploadError.value = 'Image upload failed.'
+  } finally {
+    uploadingImage.value = false
+  }
+}
+
 async function createProduct() {
   createError.value = ''
   creating.value = true
@@ -99,6 +126,7 @@ async function createProduct() {
       description: form.description || null,
     })
     Object.assign(form, { name: '', categoryId: '', price: '', initialStock: '', imageUrl: '', description: '' })
+    uploadError.value = ''
     await fetchAll()
   } catch (e) {
     createError.value = e.response?.data?.message || 'Failed to create product.'

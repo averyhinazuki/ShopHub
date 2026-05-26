@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Only push src, frontend, pom.xml, README ###
+jmeter/
+tokens.csv
+images/
+description.txt
+*.jtl
+*.log

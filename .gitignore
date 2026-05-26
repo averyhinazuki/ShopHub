@@ -31,3 +31,26 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Only push src, frontend, pom.xml, README ###
+jmeter/
+tokens.csv
+images/
+description.txt
+*.jtl
+*.log
+postman/
+docs/
+.mvn/
+jmeter.log
+mvnw
+CLAUDE.md
+flash-sale-blueprint.md
+generate_tokens.py
+mvnw.cmd
+PROGRESS.md
+README1.md
+.gitignore
+.gitattributes
+
+

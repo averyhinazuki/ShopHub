@@ -1,184 +1,199 @@
-# Flash Sale System
+# ShopHub
 
-High-concurrency e-commerce backend demonstrating production-grade inventory control under concurrent load.
-
-**Stack:** Java 19 · Spring Boot 3.x · MySQL 8 · Redis 7 · Redisson · Kafka · MongoDB · Docker Compose
+A full-stack online shopping platform engineered for high-concurrency checkout under contention. Focuses on correctness when many users race for limited stock — distributed locking, cache-aside with double-deletion, lock-free order expiry, and a publish-after-commit event pipeline.
 
 ---
 
-## Architecture Overview
+## Tech Stack
 
-```
-Client
-  │
-  ▼
-Spring Boot REST API (port 8080)
-  ├── MySQL 8         — transactional source of truth (products, inventory, orders)
-  ├── Redis 7         — read cache only (cache-aside, NOT stock authority)
-  │   └── Redisson    — distributed lock per product (lock:product:{id})
-  ├── Kafka           — async order/payment event pipeline
-  └── MongoDB 7       — activity logs (order_activity_log, user_action_log)
-```
-
-### Key Concurrency Design
-
-| Concern | Mechanism |
-|---------|-----------|
-| Oversell prevention | `UPDATE product_inventory SET available_stock = available_stock - ? WHERE product_id = ? AND available_stock >= ?` — rowsAffected=0 → SoldOutException |
-| Serialization | Redisson distributed lock `lock:product:{id}` — shared by checkout, expiry restore, and admin inventory PATCH |
-| Cache consistency | Cache-aside + delayed double deletion (first delete before MySQL write, async second delete ~500ms after) |
-| Atomic order expiry | Conditional UPDATE `WHERE status = 'PENDING'` — exactly one of {pay, expire} wins |
-| Publish-after-commit | In-process Spring domain events + `@TransactionalEventListener(AFTER_COMMIT)` before Kafka send |
+| Layer | Technology |
+|---|---|
+| Backend | Java 19 · Spring Boot 3 · Spring Security |
+| Frontend | Vue 3 · Vite · Tailwind CSS |
+| Primary DB | MySQL 8 (JPA/Hibernate) |
+| Cache | Redis (Redisson distributed locks) |
+| Message Broker | Apache Kafka |
+| Audit Logs | MongoDB |
+| Image Storage | Cloudinary |
+| Auth | JWT (access + refresh token rotation) |
 
 ---
 
-## Quick Start
+## Architecture Highlights
 
-### 1. Start infrastructure
+### Inventory Under Contention
 
-```bash
-docker-compose -f src/main/resources/docker-compose.yml up -d
-```
+Popular products create write storms during product launches, sales, or viral moments. Every stock deduction goes through a **per-product Redisson distributed lock** (`lock:product:{id}`), ensuring no two concurrent checkouts can oversell the same item. The same lock key is shared by checkout, admin inventory patches, and the order expiry scheduler — so all writers are serialized on the same mutex regardless of origin.
 
-Services: MongoDB (27017), Redis (6379), Zookeeper (2181), Kafka (9092).
-MySQL runs locally on port 3306 — create database `flash_sale` before starting.
+A MySQL **conditional `UPDATE ... WHERE stock >= ?`** sits behind the lock as a last-line consistency guarantee: even if the lock layer were bypassed or Redis became unavailable, the database itself refuses to commit an oversell. Redis serves only as a cache — MySQL remains the source of truth.
 
-### 2. Run the app
+### Cache-Aside with Double-Deletion
 
-```bash
-./mvnw spring-boot:run
-```
+Product data is cached in Redis with a 60-second TTL. On any write (checkout, restock, status change), the system uses the **double-deletion pattern** to eliminate stale reads:
 
-Spring Boot auto-creates all tables via `ddl-auto: update`.
+1. First cache deletion — before the MySQL write
+2. MySQL write commits
+3. Async second deletion — evicts any entry re-cached by a concurrent reader in the write window
 
-### 3. Seed an ADMIN user
+This closes the race between the write path and readers that might re-populate the cache between deletion and commit.
 
-Register a user via the API, then manually update their role in MySQL:
+### Lock-Free Order Expiry
+
+Unpaid orders hold stock. A scheduled job scans for PENDING orders older than the configured timeout and cancels them, restoring stock. The cancellation uses a **conditional UPDATE**:
 
 ```sql
-UPDATE users SET role = 'ADMIN' WHERE username = 'admin';
+UPDATE orders SET status = 'CANCELLED' WHERE id = ? AND status = 'PENDING'
 ```
+
+If `/pay` wins first, `rowsAffected = 0` and the scheduler skips — stock stays deducted. If the scheduler wins first, a subsequent `/pay` gets a 409. Exactly one path commits, both are inherently **idempotent**, and no separate coordination (lock, leader election, distributed transaction) is needed.
+
+### Event-Driven Order Flow
+
+Order creation and payment completion publish domain events to **Kafka** (`order-created`, `payment-completed` topics) using a **publish-after-commit** pattern — events fire only after the DB transaction succeeds, preventing phantom emissions on rollback. Consumers handle downstream processing asynchronously, decoupling the write path from side effects.
+
+### JWT Auth with Refresh Token Rotation
+
+- Access tokens: 15-minute expiry, carry username + role
+- Refresh tokens: 1-day expiry, stored in Redis keyed by `jti` (UUID), enabling individual revocation
+- On refresh: old token is revoked, a new pair is issued (rotation)
+- Logout invalidates the refresh token from Redis — access tokens expire naturally
+
+The frontend uses an Axios response interceptor to transparently call `/auth/refresh` on 401 and retry the original request with the new token.
+
+### Audit & Observability
+
+All authenticated HTTP requests are logged to **MongoDB** via a post-JWT filter (`UserActionLogFilter`), capturing username, method, path, and timestamp. Order lifecycle events (checkout, payment, expiry cancellation) write to a separate `OrderActivityLog` collection.
 
 ---
 
-## API Reference
+## Validation
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/auth/register` | Public | Create user + cart (one tx) |
-| POST | `/api/auth/login` | Public | Returns `{accessToken, refreshToken}` |
-| POST | `/api/auth/refresh` | Public | Rotate token pair |
-| POST | `/api/auth/logout` | Public | Revoke refresh token |
-| GET | `/api/categories` | Public | List categories |
-| POST | `/api/categories` | ADMIN | Create category |
-| PUT | `/api/categories/{id}` | ADMIN | Update category |
-| GET | `/api/products` | Public | Paginated list (`?category=`, `?search=`) |
-| GET | `/api/products/{id}` | Public | Detail + live stock (cache-aside) |
-| POST | `/api/products` | ADMIN | Create product + inventory (one tx) |
-| PUT | `/api/products/{id}` | ADMIN | Update catalog; `status=INACTIVE` = soft-delete |
-| PATCH | `/api/products/{id}/inventory` | ADMIN | Adjust stock by delta |
-| GET | `/api/cart` | USER | Full cart with live stock |
-| POST | `/api/cart/items` | USER | Add/increment item |
-| PUT | `/api/cart/items/{itemId}` | USER | Set item quantity |
-| DELETE | `/api/cart/items/{itemId}` | USER | Remove item |
-| POST | `/api/orders/checkout` | USER | Checkout cart (hot path) |
-| GET | `/api/orders/me` | USER | My orders (paginated) |
-| GET | `/api/orders/{id}` | USER/ADMIN | Order detail |
-| POST | `/api/orders/{id}/pay` | USER/ADMIN | Mock payment |
-| GET | `/api/orders` | ADMIN | All orders (paginated) |
+The concurrency design is verified end-to-end with JMeter (see `jmeter/checkout-preauth-latency-test.jmx`).
 
----
+**Stress test — 5000 concurrent pre-authenticated checkouts against a 10-unit SKU:**
 
-## Checkout Hot Path
+| Metric | Result |
+|---|---|
+| Successful checkouts | **10** (exactly the stock limit) |
+| Graceful 409 rejections | 4990 |
+| Oversells | **0** |
+| Connection failures | 0 |
+| Successful checkout latency | 84 – 422 ms (median ~280 ms) |
+| Total test duration | 30.9 s |
 
-```
-POST /api/orders/checkout
-
-1. Resolve userId from JWT
-2. Load + snapshot cart { productId, qty, price, status }
-3. Reject if any product.status != ACTIVE (400)
-4. FOR EACH item:
-   a. Acquire Redisson lock:product:{id}   (5s wait, 10s lease)
-   b. Delete Redis cache (first deletion)
-   c. UPDATE product_inventory SET available_stock = available_stock - qty
-        WHERE product_id = ? AND available_stock >= qty
-      rowsAffected=0 → SoldOutException (409)
-   d. Release lock
-   e. Schedule async second cache deletion (~500ms)
-5. @Transactional: create Order + OrderItems + clear cart + publish domain event
-6. @TransactionalEventListener(AFTER_COMMIT) → Kafka send
-7. CATCH any exception → restore all deducted stock (same lock + cache invalidation)
-```
-
-**Known residual gap:** if compensation fails (MySQL unreachable), stock leaks. Production fix: durable compensation queue / transactional outbox pattern.
-
----
-
-## JMeter Stress Test
-
-### What it proves
-
-50 concurrent users each hold a cart with 1 unit of a product that has only **10 units in stock**. All 50 hit `POST /api/orders/checkout` simultaneously. Expected outcome:
-
-- Exactly **10 HTTP 200** (checkout succeeded)
-- Exactly **40 HTTP 409** (sold out — `SoldOutException`)
-- Final `available_stock` in MySQL = **0** (never negative)
-
-### Requirements
-
-- Apache JMeter 5.4+ with Groovy scripting support
-- Spring Boot app running on `localhost:8080`
-- An ADMIN user in the database
-
-### Run the test
+Reproduce with:
 
 ```bash
-# From project root
-# 1. Edit jmeter/checkout-stress-test.jmx — set PRODUCT_ID, ADMIN_USERNAME, ADMIN_PASSWORD
-#    in the User Defined Variables section.
+# 1. Pre-register 5000 users and populate carts
+python jmeter/setup.py
 
-# 2. Run in non-GUI mode
-jmeter -n -t jmeter/checkout-stress-test.jmx -l jmeter/results/results.jtl -e -o jmeter/results/report/
-
-# 3. View HTML report
-open jmeter/results/report/index.html
+# 2. Run the test (within JWT TTL)
+jmeter -n -t jmeter/checkout-preauth-latency-test.jmx -l results.jtl -e -o report/
 ```
 
-### Test plan structure
-
-| Thread Group | Threads | Purpose |
-|---|---|---|
-| setUp | 1 | Admin login → reset product stock to `INITIAL_STOCK` |
-| Concurrent Checkout | 50 | Register user → add to cart → POST /checkout |
-| tearDown | 1 | GET final stock → log OVERSELL / NO OVERSELL verdict |
-
-`TestPlan.serialize_threadgroups=true` ensures setUp → main → tearDown ordering.
-
-The main thread group uses JMeter's `SyncTimer` equivalent via sequential serialization, so all 50 checkout requests are submitted in rapid succession within the 5s ramp window.
-
-### Benchmark Results
-
-> Fill in after running the test.
-
-| Metric | Value |
-|--------|-------|
-| Concurrent users | 200 |
-| Initial stock | 10 |
-| HTTP 200 (success) | **10** |
-| HTTP 409 (sold out) | **190** |
-| Final available_stock | **0** |
-| Oversell? | **NO** |
-| Min checkout latency | 9ms |
-| Avg checkout latency | 14ms |
-| P90 checkout latency | 20ms |
-| P99 checkout latency | 24ms |
-| Max checkout latency | 26ms |
+The tearDown asserts `availableStock = 0` — any oversell fails the test loudly.
 
 ---
 
-## Known Limitations / Production Next Steps
+## Features
 
-1. **Transactional outbox pattern** — if the JVM crashes between DB commit and Kafka send, the event is lost. Fix: write event to an `outbox` table in the same tx; separate poller publishes to Kafka.
-2. **Compensation queue** — if stock compensation fails (MySQL unreachable during checkout rollback), deducted stock leaks. Fix: persist the rollback list to a durable queue and retry.
-3. **JWT secret in config** — kept in `application.yml` for this dev build. Production: load from environment variable / secret manager.
-4. **Single Kafka broker** — `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1` is dev-only. Production: 3+ brokers, replication factor 3.
+**Storefront**
+- Browse products with category filter and search
+- Add to cart, adjust quantities
+- Checkout → pay flow with real-time stock validation
+- Order history
+
+**Admin Panel**
+- Create and manage products with Cloudinary image upload
+- Live inventory restock with distributed-lock safety
+- Order management with status tracking
+
+**Infrastructure**
+- Stateless REST API (JWT, no sessions)
+- Redis-backed distributed locks via Redisson
+- Kafka async event pipeline
+- Scheduled order expiry with batch processing
+- MongoDB audit trail
+
+---
+
+## Running Locally
+
+**Prerequisites:** Java 19, Node 18+, MySQL 8, Redis, MongoDB, Kafka, Zookeeper
+
+```bash
+# Backend
+./mvnw spring-boot:run
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Configure credentials in `src/main/resources/application.yml`:
+
+```yaml
+spring.datasource:
+  url: jdbc:mysql://localhost:3306/flash_sale_db
+  username: root
+  password: yourpassword
+
+app:
+  jwt.secret: your-256-bit-secret
+  cloudinary:
+    cloud-name: your-cloud-name
+    api-key: your-api-key
+    api-secret: your-api-secret
+```
+
+---
+
+## API Overview
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/auth/register` | Public | Register |
+| POST | `/api/auth/login` | Public | Login |
+| POST | `/api/auth/refresh` | Public | Rotate token pair |
+| POST | `/api/auth/logout` | User | Revoke refresh token |
+| GET | `/api/products` | Public | List products (paginated, filterable) |
+| GET | `/api/products/{id}` | Public | Product detail (cache-aside) |
+| POST | `/api/products` | Admin | Create product + inventory |
+| PUT | `/api/products/{id}` | Admin | Update product |
+| PATCH | `/api/products/{id}/inventory` | Admin | Adjust stock |
+| GET | `/api/cart` | User | Get cart |
+| POST | `/api/cart/items` | User | Add to cart |
+| DELETE | `/api/cart/items/{id}` | User | Remove from cart |
+| POST | `/api/orders/checkout` | User | Checkout cart |
+| POST | `/api/orders/{id}/pay` | User | Pay for order |
+| GET | `/api/orders` | User/Admin | List orders |
+| POST | `/api/upload` | Admin | Upload image to Cloudinary |
+
+---
+
+## Project Structure
+
+```
+src/main/java/com/example/flashsale/
+├── controller/        # REST endpoints
+├── service/           # Business logic
+├── entity/            # JPA entities
+├── dto/               # Request/response shapes
+├── security/          # JWT filter, util, Spring Security config
+├── kafka/             # Producers, consumers, domain events
+├── scheduler/         # Order expiry job
+├── filter/            # UserActionLog filter
+├── repository/
+│   ├── jpa/           # MySQL repositories
+│   └── mongo/         # MongoDB repositories
+├── document/          # MongoDB documents
+├── exception/         # Global exception handler
+└── enums/             # OrderStatus, ProductStatus, Role
+
+frontend/src/
+├── views/             # Page components (Home, Cart, Orders, Admin)
+├── stores/            # Pinia auth store
+├── services/          # Axios instance + interceptors
+└── router/            # Vue Router with auth guards
+```

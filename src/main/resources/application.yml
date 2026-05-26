@@ -45,6 +45,12 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
+  # Multipart file upload config
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+
 # JWT config (custom — not a Spring key)
 app:
   jwt:
@@ -55,6 +61,10 @@ app:
     pending-timeout-minutes: 15
     expiry-job-interval-seconds: 60
     expiry-job-batch-size: 100
+  cloudinary:
+    cloud-name: dlxamalb1
+    api-key: 559889381252938
+    api-secret: d_DIsfQy7RV9a1ewI_5WJY5BEEI
 
 server:
   port: 8080

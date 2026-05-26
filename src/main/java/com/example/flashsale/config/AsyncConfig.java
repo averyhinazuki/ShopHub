@@ -7,6 +7,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Enables @Async and configures a dedicated thread pool for background tasks.
@@ -23,10 +24,13 @@ public class AsyncConfig {
     @Bean(name = "cacheEvictExecutor")
     public Executor cacheEvictExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(8);
-        executor.setQueueCapacity(200);
+        executor.setCorePoolSize(8);
+        executor.setMaxPoolSize(32);
+        executor.setQueueCapacity(2000);
         executor.setThreadNamePrefix("cache-evict-");
+        // CallerRunsPolicy: if pool saturates, run on the caller thread instead of dropping.
+        // Trades request latency for guaranteed delivery of cache evictions and audit logs.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
         return executor;
     }

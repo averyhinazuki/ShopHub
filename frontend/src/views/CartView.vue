@@ -90,15 +90,23 @@ async function fetchCart() {
 
 async function updateQty(item, newQty) {
   if (newQty < 1) { removeItem(item); return }
-  // CartItemRequest requires productId even on PUT (same DTO as POST)
-  await api.put(`/cart/items/${item.id}`, { productId: item.productId, quantity: newQty })
-  item.quantity = newQty
+  try {
+    // CartItemRequest requires productId even on PUT (same DTO as POST)
+    await api.put(`/cart/items/${item.id}`, { productId: item.productId, quantity: newQty })
+    item.quantity = newQty
+  } catch {
+    checkoutError.value = 'Failed to update quantity.'
+  }
 }
 
 async function removeItem(item) {
-  await api.delete(`/cart/items/${item.id}`)
-  items.value = items.value.filter(i => i.id !== item.id)
-  cart.decrement()
+  try {
+    await api.delete(`/cart/items/${item.id}`)
+    items.value = items.value.filter(i => i.id !== item.id)
+    cart.decrement()
+  } catch {
+    checkoutError.value = 'Failed to remove item.'
+  }
 }
 
 async function checkout() {

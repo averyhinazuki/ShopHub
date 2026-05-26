@@ -40,3 +40,7 @@ description.txt
 *.jtl
 *.log
 postman/
+docs/
+.mvn/
+jmeter.log
+mvnw

@@ -52,7 +52,7 @@ app:
     access-expiration-ms: 900000     # 15 minutes
     refresh-expiration-ms: 86400000  # 1 day
   order:
-    pending-timeout-minutes: 0
+    pending-timeout-minutes: 15
     expiry-job-interval-seconds: 60
     expiry-job-batch-size: 100
 

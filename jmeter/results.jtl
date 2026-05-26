@@ -1,0 +1,607 @@
+timeStamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success,failureMessage,bytes,sentBytes,grpThreads,allThreads,URL,Latency,IdleTime,Connect
+1779761764556,153,[setUp] Admin Login,200,,setUp — Reset Stock to 10 1-1,text,true,,764,229,1,1,http://localhost:8080/api/auth/login,153,0,1
+1779761764722,265,[setUp] GET Current Stock,200,,setUp — Reset Stock to 10 1-1,text,true,,607,165,1,1,http://localhost:8080/api/products/2,265,0,0
+1779761764998,16,[setUp] Compute Stock Delta,200,delta=10 reason=restock,setUp — Reset Stock to 10 1-1,text,true,,0,0,1,1,null,0,0,0
+1779761765022,112,[setUp] PATCH Inventory → 10,204,,setUp — Reset Stock to 10 1-1,,true,,272,424,1,1,http://localhost:8080/api/products/2/inventory,0,0,0
+1779761765138,97,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-1,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,97,0,2
+1779761765249,20,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-1,text,true,,489,416,3,3,http://localhost:8080/api/cart/items,19,0,0
+1779761765187,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-2,text,true,,778,239,3,3,http://localhost:8080/api/auth/register,92,0,1
+1779761765281,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-2,text,true,,488,416,4,4,http://localhost:8080/api/cart/items,12,0,0
+1779761765269,26,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-1,text,true,,579,392,4,4,http://localhost:8080/api/orders/checkout,25,0,0
+1779761765294,20,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-2,text,true,,579,392,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761765237,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-3,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761765327,14,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-3,text,true,,488,416,3,3,http://localhost:8080/api/cart/items,14,0,0
+1779761765341,24,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-3,text,true,,579,392,3,3,http://localhost:8080/api/orders/checkout,24,0,0
+1779761765287,96,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-4,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,96,0,1
+1779761765384,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-4,text,true,,488,416,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761765396,19,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-4,text,true,,579,392,3,3,http://localhost:8080/api/orders/checkout,19,0,0
+1779761765337,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-5,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761765431,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-5,text,true,,488,416,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761765443,20,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-5,text,true,,579,392,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761765388,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-6,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761765478,15,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-6,text,true,,488,416,3,3,http://localhost:8080/api/cart/items,14,0,0
+1779761765493,23,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-6,text,true,,579,392,3,3,http://localhost:8080/api/orders/checkout,23,0,0
+1779761765437,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-7,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761765526,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-7,text,true,,488,416,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761765537,20,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-7,text,true,,579,392,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761765487,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-8,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761765580,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-8,text,true,,488,416,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761765591,20,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-8,text,true,,578,392,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761765536,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-9,text,true,,778,239,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761765629,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-9,text,true,,488,416,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761765641,23,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-9,text,true,,579,392,3,3,http://localhost:8080/api/orders/checkout,23,0,0
+1779761765587,95,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-10,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,95,0,0
+1779761765683,16,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-10,text,true,,488,418,3,3,http://localhost:8080/api/cart/items,16,0,0
+1779761765699,21,3. POST /checkout  ← HOT PATH,200,,Concurrent Checkout — 200 users 2-10,text,true,,579,394,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761765637,94,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-11,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,94,0,1
+1779761765732,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-11,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761765743,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-11,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761765688,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-12,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,2
+1779761765780,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-12,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761765793,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-12,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761765737,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-13,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761765830,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-13,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761765838,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-13,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761765787,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-14,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761765875,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-14,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,11,0,0
+1779761765887,18,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-14,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,18,0,0
+1779761765838,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-15,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761765924,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-15,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,11,0,0
+1779761765936,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-15,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761765888,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-16,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761765981,16,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-16,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,16,0,0
+1779761765998,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-16,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761765938,94,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-17,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,94,0,1
+1779761766033,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-17,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761766044,19,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-17,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,19,0,0
+1779761765987,96,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-18,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,96,0,2
+1779761766084,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-18,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761766094,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-18,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761766037,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-19,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761766128,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-19,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761766137,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-19,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761766086,98,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-20,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,98,0,1
+1779761766185,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-20,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761766196,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-20,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761766137,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-21,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761766227,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-21,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761766235,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-21,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761766187,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-22,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,84,0,0
+1779761766272,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-22,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761766283,19,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-22,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,19,0,0
+1779761766237,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-23,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761766326,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-23,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,11,0,0
+1779761766337,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-23,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761766289,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-24,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761766378,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-24,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761766387,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-24,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761766338,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-25,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761766426,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-25,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761766437,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-25,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761766388,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-26,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761766481,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-26,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761766491,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-26,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761766437,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-27,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761766526,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-27,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761766536,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-27,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761766488,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-28,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,82,0,1
+1779761766571,15,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-28,text,true,,541,418,2,2,http://localhost:8080/api/cart/items,14,0,0
+1779761766586,20,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-28,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761766538,105,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-29,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,105,0,1
+1779761766645,16,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-29,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,16,0,0
+1779761766661,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-29,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761766588,109,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-30,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,109,0,1
+1779761766698,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-30,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761766710,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-30,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761766638,102,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-31,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,101,0,3
+1779761766741,13,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-31,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761766754,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-31,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761766688,102,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-32,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,100,0,1
+1779761766791,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-32,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761766801,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-32,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761766737,97,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-33,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,97,0,1
+1779761766835,13,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-33,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761766849,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-33,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761766788,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-34,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761766881,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-34,text,true,,541,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761766892,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-34,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761766837,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-35,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,2
+1779761766929,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-35,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761766939,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-35,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761766888,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-36,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,0
+1779761766976,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-36,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761766987,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-36,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761766937,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-37,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761767025,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-37,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761767035,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-37,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761766988,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-38,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761767073,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-38,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,11,0,0
+1779761767085,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-38,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761767038,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-39,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761767128,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-39,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761767138,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-39,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761767088,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-40,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761767175,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-40,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761767184,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-40,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761767137,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-41,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761767222,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-41,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761767231,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-41,text,true,,376,394,2,2,http://localhost:8080/api/orders/checkout,12,0,0
+1779761767188,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-42,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761767282,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-42,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761767291,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-42,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761767248,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-43,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761767336,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-43,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761767348,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-43,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761767293,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-44,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,83,0,2
+1779761767377,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-44,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761767386,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-44,text,true,,376,394,2,2,http://localhost:8080/api/orders/checkout,12,0,0
+1779761767337,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-45,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761767425,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-45,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761767435,22,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-45,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,22,0,0
+1779761767401,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-46,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,88,0,1
+1779761767490,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-46,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761767501,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-46,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761767438,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-47,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761767528,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-47,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761767539,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-47,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761767487,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-48,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761767574,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-48,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761767583,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-48,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761767536,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-49,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761767617,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-49,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761767627,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-49,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761767587,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-50,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,83,0,1
+1779761767670,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-50,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761767678,9,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-50,text,true,,376,394,2,2,http://localhost:8080/api/orders/checkout,8,0,0
+1779761767637,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-51,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,82,0,1
+1779761767720,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-51,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761767730,20,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-51,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761767688,122,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-52,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,122,0,1
+1779761767810,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-52,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761767822,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-52,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761767737,120,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-53,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,120,0,1
+1779761767857,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-53,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761767866,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-53,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761767788,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-54,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,89,0,1
+1779761767878,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-54,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761767888,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-54,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761767837,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-55,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761767929,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-55,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761767941,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-55,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761767887,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-56,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761767980,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-56,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761767989,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-56,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761767936,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-57,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,90,0,2
+1779761768027,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-57,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761768037,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-57,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761767987,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-58,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761768076,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-58,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761768088,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-58,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761768037,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-59,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,86,0,2
+1779761768124,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-59,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761768132,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-59,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761768087,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-60,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,83,0,1
+1779761768171,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-60,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761768180,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-60,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761768136,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-61,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,84,0,2
+1779761768221,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-61,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761768229,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-61,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761768188,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-62,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761768273,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-62,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761768281,21,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-62,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,21,0,0
+1779761768238,95,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-63,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,94,0,1
+1779761768333,15,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-63,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,14,0,0
+1779761768348,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-63,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761768287,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-64,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761768378,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-64,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761768389,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-64,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761768336,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-65,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761768426,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-65,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761768439,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-65,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761768387,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-66,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761768481,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-66,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761768490,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-66,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761768438,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-67,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761768527,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-67,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761768536,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-67,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761768488,98,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-68,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,98,0,1
+1779761768587,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-68,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761768599,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-68,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761768538,105,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-69,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,105,0,1
+1779761768644,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-69,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761768654,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-69,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761768587,102,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-70,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,102,0,1
+1779761768690,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-70,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761768699,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-70,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761768637,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-71,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761768730,14,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-71,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,13,0,0
+1779761768744,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-71,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761768687,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-72,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,2
+1779761768778,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-72,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761768789,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-72,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761768737,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-73,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761768824,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-73,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,11,0,0
+1779761768835,18,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-73,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,17,0,0
+1779761768787,95,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-74,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,95,0,1
+1779761768883,22,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-74,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,21,0,0
+1779761768905,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-74,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761768837,106,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-75,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,106,0,1
+1779761768944,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-75,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761768956,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-75,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761768887,94,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-76,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,94,0,1
+1779761768982,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-76,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761768993,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-76,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,17,0,0
+1779761768937,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-77,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761769029,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-77,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761769038,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-77,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761768988,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-78,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761769075,19,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-78,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,18,0,0
+1779761769094,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-78,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761769038,97,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-79,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,97,0,1
+1779761769136,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-79,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761769148,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-79,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761769087,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-80,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761769175,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-80,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761769183,19,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-80,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,19,0,0
+1779761769137,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-81,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,86,0,0
+1779761769224,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-81,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761769233,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-81,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761769187,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-82,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761769269,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-82,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761769277,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-82,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761769237,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-83,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761769318,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-83,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761769326,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-83,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761769287,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-84,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761769379,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-84,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761769387,18,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-84,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,18,0,0
+1779761769337,97,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-85,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,96,0,1
+1779761769434,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-85,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761769446,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-85,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761769387,97,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-86,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,97,0,1
+1779761769484,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-86,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761769495,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-86,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761769437,100,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-87,text,true,,781,240,3,3,http://localhost:8080/api/auth/register,100,0,1
+1779761769537,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-87,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761769545,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-87,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761769486,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-88,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761769574,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-88,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761769583,24,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-88,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,24,0,0
+1779761769536,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-89,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761769625,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-89,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761769634,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-89,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,17,0,0
+1779761769588,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-90,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761769675,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-90,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761769684,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-90,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761769638,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-91,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,81,0,0
+1779761769720,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-91,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761769728,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-91,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761769687,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-92,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761769773,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-92,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761769781,18,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-92,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,18,0,0
+1779761769737,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-93,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761769827,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-93,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761769835,18,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-93,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,18,0,0
+1779761769786,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-94,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761769874,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-94,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761769882,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-94,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761769836,79,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-95,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,79,0,1
+1779761769916,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-95,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761769924,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-95,text,true,,376,394,2,2,http://localhost:8080/api/orders/checkout,10,0,0
+1779761769887,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-96,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761769969,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-96,text,true,,542,418,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761769978,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-96,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761769937,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-97,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761770029,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-97,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761770038,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-97,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761769987,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-98,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761770078,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-98,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761770089,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-98,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761770038,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-99,text,true,,781,240,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761770132,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-99,text,true,,542,418,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761770141,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-99,text,true,,376,394,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761770087,94,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-100,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,94,0,2
+1779761770182,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-100,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761770191,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-100,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761770137,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-101,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761770228,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-101,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770236,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-101,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761770187,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-102,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761770277,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-102,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770286,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-102,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761770238,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-103,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761770324,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-103,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770332,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-103,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761770288,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-104,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761770376,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-104,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770385,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-104,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761770337,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-105,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,93,0,2
+1779761770431,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-105,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,7,0,0
+1779761770439,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-105,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761770387,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-106,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761770472,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-106,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761770480,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-106,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,10,0,0
+1779761770437,78,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-107,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,78,0,1
+1779761770516,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-107,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761770526,19,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-107,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,19,0,0
+1779761770487,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-108,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761770574,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-108,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770582,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-108,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761770537,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-109,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761770628,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-109,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761770637,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-109,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761770588,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-110,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,83,0,1
+1779761770671,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-110,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770679,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-110,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761770637,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-111,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761770719,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-111,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770728,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-111,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761770687,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-112,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761770778,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-112,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761770786,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-112,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761770737,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-113,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761770830,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-113,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,7,0,0
+1779761770837,23,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-113,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,23,0,0
+1779761770787,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-114,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761770873,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-114,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770881,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-114,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761770836,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-115,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761770922,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-115,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761770930,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-115,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761770886,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-116,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761770967,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-116,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761770975,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-116,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761770937,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-117,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,82,0,0
+1779761771020,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-117,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771028,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-117,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761770986,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-118,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761771080,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-118,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761771089,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-118,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761771037,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-119,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,89,0,4
+1779761771127,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-119,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761771135,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-119,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761771088,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-120,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761771173,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-120,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771181,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-120,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761771137,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-121,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,82,0,2
+1779761771220,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-121,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771229,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-121,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761771187,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-122,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761771273,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-122,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771281,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-122,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761771237,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-123,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761771322,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-123,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761771330,10,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-123,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,10,0,0
+1779761771286,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-124,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761771372,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-124,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761771382,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-124,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761771336,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-125,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761771421,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-125,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761771431,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-125,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761771386,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-126,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761771471,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-126,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771479,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-126,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,17,0,0
+1779761771436,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-127,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761771527,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-127,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761771534,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-127,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761771488,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-128,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761771573,26,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-128,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,26,0,0
+1779761771600,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-128,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,17,0,0
+1779761771538,103,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-129,text,true,,783,241,3,3,http://localhost:8080/api/auth/register,103,0,1
+1779761771642,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-129,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761771650,18,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-129,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,18,0,0
+1779761771588,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-130,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761771678,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-130,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761771687,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-130,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761771637,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-131,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,83,0,1
+1779761771721,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-131,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761771728,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-131,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,10,0,0
+1779761771686,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-132,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,83,0,1
+1779761771770,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-132,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761771777,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-132,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761771737,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-133,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761771826,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-133,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771834,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-133,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761771787,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-134,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761771873,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-134,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771881,22,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-134,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,22,0,0
+1779761771836,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-135,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761771923,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-135,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761771932,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-135,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761771886,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-136,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,92,0,2
+1779761771978,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-136,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761771986,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-136,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761771936,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-137,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761772023,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-137,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,11,0,0
+1779761772034,20,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-137,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761771988,106,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-138,text,true,,783,241,3,3,http://localhost:8080/api/auth/register,106,0,4
+1779761772095,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-138,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761772105,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-138,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761772037,100,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-139,text,true,,783,241,3,3,http://localhost:8080/api/auth/register,100,0,1
+1779761772138,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-139,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761772147,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-139,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761772088,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-140,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761772173,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-140,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761772182,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-140,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761772137,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-141,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,81,0,0
+1779761772219,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-141,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761772227,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-141,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761772186,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-142,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,80,0,1
+1779761772267,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-142,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761772276,17,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-142,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,17,0,0
+1779761772236,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-143,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761772323,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-143,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761772331,19,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-143,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,18,0,0
+1779761772286,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-144,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761772380,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-144,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761772389,20,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-144,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761772337,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-145,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761772430,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-145,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761772439,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-145,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761772387,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-146,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761772477,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-146,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761772485,10,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-146,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,10,0,0
+1779761772437,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-147,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,82,0,1
+1779761772520,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-147,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761772529,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-147,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761772487,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-148,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761772569,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-148,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761772576,23,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-148,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,23,0,0
+1779761772537,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-149,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761772626,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-149,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761772634,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-149,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761772588,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-150,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761772676,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-150,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761772686,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-150,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761772638,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-151,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,82,0,1
+1779761772721,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-151,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761772730,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-151,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761772686,81,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-152,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,81,0,1
+1779761772767,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-152,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761772776,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-152,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761772736,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-153,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,83,0,1
+1779761772819,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-153,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761772828,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-153,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761772787,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-154,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761772874,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-154,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761772881,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-154,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761772836,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-155,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761772923,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-155,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761772931,20,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-155,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761772887,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-156,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,83,0,1
+1779761772971,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-156,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761772978,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-156,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761772936,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-157,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,82,0,1
+1779761773019,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-157,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761773027,20,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-157,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761772987,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-158,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761773073,7,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-158,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761773080,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-158,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761773037,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-159,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,2
+1779761773128,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-159,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761773137,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-159,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761773087,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-160,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761773177,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-160,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773186,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-160,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761773136,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-161,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761773223,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-161,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773231,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-161,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761773187,85,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-162,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761773272,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-162,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773281,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-162,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761773236,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-163,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761773323,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-163,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761773333,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-163,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761773287,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-164,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761773373,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-164,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,12,0,0
+1779761773386,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-164,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761773338,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-165,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761773426,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-165,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761773436,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-165,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761773388,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-166,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761773480,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-166,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773488,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-166,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761773438,84,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-167,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,84,0,1
+1779761773522,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-167,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761773533,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-167,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761773489,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-168,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,85,0,1
+1779761773575,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-168,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773583,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-168,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761773539,82,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-169,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,82,0,1
+1779761773621,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-169,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773629,21,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-169,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761773588,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-170,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761773677,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-170,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773686,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-170,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761773637,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-171,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,89,0,1
+1779761773726,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-171,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761773736,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-171,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761773687,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-172,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761773774,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-172,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761773784,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-172,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761773737,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-173,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761773823,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-173,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773831,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-173,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761773787,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-174,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761773875,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-174,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761773884,20,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-174,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,20,0,0
+1779761773837,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-175,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761773929,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-175,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,8,0,0
+1779761773940,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-175,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761773887,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-176,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,89,0,3
+1779761773977,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-176,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761773986,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-176,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761773937,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-177,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,88,0,2
+1779761774025,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-177,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761774033,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-177,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761773988,87,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-178,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,2
+1779761774076,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-178,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761774084,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-178,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761774037,83,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-179,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,82,0,2
+1779761774120,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-179,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,7,0,0
+1779761774128,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-179,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761774088,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-180,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761774175,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-180,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761774184,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-180,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761774137,94,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-181,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761774231,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-181,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761774240,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-181,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761774187,93,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-182,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761774281,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-182,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761774292,11,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-182,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,10,0,0
+1779761774237,90,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-183,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761774327,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-183,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,9,0,0
+1779761774336,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-183,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761774287,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-184,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761774375,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-184,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761774384,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-184,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761774337,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-185,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,88,0,1
+1779761774425,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-185,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761774435,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-185,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761774388,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-186,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761774479,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-186,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761774490,14,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-186,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,14,0,0
+1779761774438,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-187,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761774531,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-187,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761774541,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-187,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761774488,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-188,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,91,0,1
+1779761774580,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-188,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761774590,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-188,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761774537,88,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-189,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,87,0,1
+1779761774625,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-189,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761774637,16,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-189,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,16,0,0
+1779761774587,94,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-190,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,94,0,1
+1779761774681,13,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-190,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,12,0,0
+1779761774694,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-190,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761774637,101,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-191,text,true,,783,241,3,3,http://localhost:8080/api/auth/register,101,0,1
+1779761774739,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-191,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761774748,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-191,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761774687,98,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-192,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,98,0,1
+1779761774786,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-192,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761774797,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-192,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761774738,92,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-193,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,92,0,1
+1779761774831,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-193,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761774841,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-193,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761774788,94,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-194,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,93,0,1
+1779761774882,12,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-194,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,11,0,0
+1779761774894,15,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-194,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,15,0,0
+1779761774836,95,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-195,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,95,0,1
+1779761774932,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-195,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,9,0,0
+1779761774942,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-195,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761774887,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-196,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,91,0,2
+1779761774978,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-196,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761774988,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-196,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,13,0,0
+1779761774937,86,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-197,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,86,0,1
+1779761775024,8,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-197,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,8,0,0
+1779761775033,13,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-197,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,12,0,0
+1779761774988,91,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-198,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,90,0,1
+1779761775079,10,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-198,text,true,,542,419,3,3,http://localhost:8080/api/cart/items,10,0,0
+1779761775089,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-198,text,true,,376,395,3,3,http://localhost:8080/api/orders/checkout,11,0,0
+1779761775037,96,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-199,text,true,,783,241,2,2,http://localhost:8080/api/auth/register,96,0,1
+1779761775133,11,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-199,text,true,,542,419,2,2,http://localhost:8080/api/cart/items,10,0,0
+1779761775144,12,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-199,text,true,,376,395,2,2,http://localhost:8080/api/orders/checkout,12,0,0
+1779761775086,89,1. Register User + Get Token,200,,Concurrent Checkout — 200 users 2-200,text,true,,783,241,1,1,http://localhost:8080/api/auth/register,89,0,1
+1779761775176,9,2. Add to Cart (qty=1),200,,Concurrent Checkout — 200 users 2-200,text,true,,542,419,1,1,http://localhost:8080/api/cart/items,8,0,0
+1779761775185,18,3. POST /checkout  ← HOT PATH,409,,Concurrent Checkout — 200 users 2-200,text,true,,376,395,1,1,http://localhost:8080/api/orders/checkout,18,0,0
+1779761775206,15,[tearDown] GET Final Stock,200,,tearDown — Verify Final Stock 3-1,text,true,,607,165,1,1,http://localhost:8080/api/products/2,14,0,4
+1779761775232,21,[tearDown] Print Stock Verdict,200,OK: sold=10 remaining=0,tearDown — Verify Final Stock 3-1,text,true,,0,0,1,1,null,0,0,0

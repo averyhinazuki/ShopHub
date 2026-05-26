@@ -9,7 +9,7 @@ for i in range(1, 51):
         "username": f"user{i}",
         "password": "password"
     })
-    token = res.json().get("token")
+    token = res.json().get("accessToken")
     tokens.append([f"user{i}", token])
     print(f"Got token for user{i}")
 

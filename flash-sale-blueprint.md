@@ -509,15 +509,19 @@ flash-sale-system/
 
 ---
 
-## 11. Resume Bullets (target after Step 13)
-- Built a high-concurrency e-commerce backend handling **X RPS** with zero overselling, using Redisson distributed locks and MySQL as the authoritative stock source
-- Implemented cache-aside with delayed double deletion to maintain Redis/MySQL consistency under concurrent reads and writes
-- Designed sequential multi-item checkout with per-product locking and automatic stock rollback on partial failure
-- Decoupled order placement from payment processing via Kafka, reducing P99 latency from **Xms → Yms**
-- Polyglot persistence: MySQL for transactional data, MongoDB for activity logs, Redis for read cache
-- Containerized with Docker Compose; stress-tested with JMeter with documented benchmark methodology
+## 11. Resume Bullets
 
-*(Fill X/Y from Step 13 JMeter results.)*
+### Draft A (original)
+- Designed a high-concurrency checkout engine that guaranteed **zero stock oversell** under 200 simultaneous requests — exactly 10 orders filled against a 10-unit limit (avg **14 ms**, P99 **24 ms**), validated with JMeter
+- Prevented race conditions via **per-product Redisson distributed locks** + MySQL conditional UPDATE as the in-DB safety net; Redis used as read cache only, never as stock authority
+- Maintained cache consistency under concurrent load with **cache-aside + delayed double deletion**; async second eviction ~500 ms after write closes the re-cache window
+- Built async event pipeline with **Kafka** (publish-after-commit pattern) and polyglot persistence: MySQL for orders/inventory, Redis for caching, MongoDB for activity logs
+
+### Draft B (final — stronger verbs)
+- Engineered a high-concurrency checkout system that guaranteed zero inventory oversell under 200 concurrent requests — fulfilling exactly 10 orders against a 10-unit stock limit (avg latency 14 ms, P99 24 ms), validated with JMeter
+- Eliminated race conditions using per-product Redisson distributed locks with MySQL conditional UPDATE as the final consistency safeguard; Redis served strictly as a cache layer, never as the source of truth
+- Maintained cache consistency under concurrent writes using cache-aside + delayed double deletion, with asynchronous secondary eviction (~500 ms post-write) minimizing stale re-cache windows
+- Built an asynchronous event-driven pipeline with Kafka using a publish-after-commit pattern, alongside polyglot persistence architecture: MySQL (orders/inventory), Redis (cache), MongoDB (activity logs)
 
 ---
 

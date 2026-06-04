@@ -198,10 +198,9 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
     }
 
-    /** Used by list queries — fetches stock from MySQL directly (no cache). */
+    /** Used by list queries — inventory already joined via @EntityGraph, no extra query. */
     private ProductResponse toResponseWithStock(Product product) {
-        ProductInventory inv = inventoryRepository.findByProductId(product.getId()).orElse(null);
-        return toResponse(product, inv);
+        return toResponse(product, product.getInventory());
     }
 
     ProductResponse toResponse(Product product, ProductInventory inv) {

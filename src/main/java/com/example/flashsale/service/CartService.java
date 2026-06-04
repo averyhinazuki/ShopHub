@@ -170,7 +170,7 @@ public class CartService {
     private CartResponse toCartResponse(Cart cart) {
         List<CartItemResponse> items = cart.getItems().stream()
                 .map(ci -> {
-                    ProductInventory inv = inventoryRepository.findByProductId(ci.getProduct().getId()).orElse(null);
+                    ProductInventory inv = ci.getProduct().getInventory();
                     int available = (inv != null) ? inv.getAvailableStock() : 0;
                     return toItemResponse(ci, ci.getProduct(), available);
                 })

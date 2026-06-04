@@ -10,6 +10,13 @@ import java.time.LocalDateTime;
 @Data
 @Entity
 @Table(name = "products")
+@NamedEntityGraph(
+    name = "Product.withInventoryAndCategory",
+    attributeNodes = {
+        @NamedAttributeNode("inventory"),
+        @NamedAttributeNode("category")
+    }
+)
 public class Product {
 
     @Id
@@ -35,4 +42,7 @@ public class Product {
     private ProductStatus status = ProductStatus.ACTIVE;
 
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @OneToOne(mappedBy = "product", fetch = FetchType.LAZY)
+    private ProductInventory inventory;
 }

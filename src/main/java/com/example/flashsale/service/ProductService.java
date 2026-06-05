@@ -158,20 +158,20 @@ public class ProductService {
         }
         int delta = request.getDelta();
 
-        // Guard: available stock cannot go negative
-        if (delta < 0) {
-            ProductInventory inv = inventoryRepository.findByProductId(productId).orElseThrow();
-            if (inv.getAvailableStock() + delta < 0) {
-                throw new IllegalArgumentException(
-                        "Adjustment would make availableStock negative (current="
-                        + inv.getAvailableStock() + ", delta=" + delta + ")");
-            }
-        }
-
         RLock lock = redissonClient.getLock("lock:product:" + productId);
         try {
             boolean acquired = lock.tryLock(5, 10, TimeUnit.SECONDS);
             if (!acquired) throw new RuntimeException("Could not acquire lock for product: " + productId);
+
+            // Guard inside the lock — reads committed state, safe against concurrent checkouts
+            if (delta < 0) {
+                ProductInventory inv = inventoryRepository.findByProductId(productId).orElseThrow();
+                if (inv.getAvailableStock() + delta < 0) {
+                    throw new IllegalArgumentException(
+                            "Adjustment would make availableStock negative (current="
+                            + inv.getAvailableStock() + ", delta=" + delta + ")");
+                }
+            }
 
             // First deletion — before the MySQL write
             cacheService.deleteCache(productId);

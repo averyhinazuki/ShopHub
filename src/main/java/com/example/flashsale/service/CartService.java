@@ -10,10 +10,9 @@ import com.example.flashsale.repository.jpa.CartItemRepository;
 import com.example.flashsale.repository.jpa.CartRepository;
 import com.example.flashsale.repository.jpa.ProductInventoryRepository;
 import com.example.flashsale.repository.jpa.ProductRepository;
-import com.example.flashsale.repository.jpa.UserRepository;
+import com.example.flashsale.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,14 +29,14 @@ public class CartService {
     private final CartItemRepository      cartItemRepository;
     private final ProductRepository       productRepository;
     private final ProductInventoryRepository inventoryRepository;
-    private final UserRepository          userRepository;
+    private final SecurityUtils           securityUtils;
 
     // ── Public API ───────────────────────────────────────────────────────────
 
     /** GET /api/cart — returns the caller's full cart. */
     @Transactional(readOnly = true)
     public CartResponse getCart() {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
         Cart cart = findCartOrThrow(userId);
         return toCartResponse(cart);
     }
@@ -51,7 +50,7 @@ public class CartService {
      */
     @Transactional
     public AddToCartResponse addItem(CartItemRequest request) {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
         Cart cart = findCartOrThrow(userId);
         Product product = findActiveProductOrThrow(request.getProductId());
 
@@ -86,7 +85,7 @@ public class CartService {
      */
     @Transactional
     public AddToCartResponse updateItem(Long itemId, CartItemRequest request) {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
         Cart cart = findCartOrThrow(userId);
         CartItem item = findItemAndVerifyOwnership(itemId, cart.getId());
 
@@ -109,7 +108,7 @@ public class CartService {
      */
     @Transactional
     public void removeItem(Long itemId) {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
         Cart cart = findCartOrThrow(userId);
         CartItem item = findItemAndVerifyOwnership(itemId, cart.getId());
 
@@ -121,11 +120,6 @@ public class CartService {
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
-
-    private Long resolveUserId() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username).orElseThrow().getId();
-    }
 
     private Cart findCartOrThrow(Long userId) {
         return cartRepository.findByUserId(userId)

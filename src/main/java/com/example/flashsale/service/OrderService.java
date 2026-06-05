@@ -10,6 +10,7 @@ import com.example.flashsale.exception.SoldOutException;
 import com.example.flashsale.kafka.event.OrderCreatedDomainEvent;
 import com.example.flashsale.kafka.event.PaymentCompletedDomainEvent;
 import com.example.flashsale.repository.jpa.*;
+import com.example.flashsale.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
@@ -47,7 +48,7 @@ public class OrderService {
     // ── Constructor-injected (via Lombok @RequiredArgsConstructor) ───────────
     private final OrderRepository            orderRepository;
     private final OrderItemRepository        orderItemRepository;
-    private final UserRepository             userRepository;
+    private final SecurityUtils              securityUtils;
     private final CartRepository             cartRepository;
     private final CartItemRepository         cartItemRepository;
     private final ProductInventoryRepository inventoryRepository;
@@ -98,7 +99,7 @@ public class OrderService {
      *   4. On any exception: restore all committed deductions (+ cache invalidation).
      */
     public OrderResponse checkout() {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
 
         // Step 1 — load cart + validate, returns immutable snapshot
         CartSnapshot snapshot = self.loadCartSnapshot(userId);
@@ -254,7 +255,7 @@ public class OrderService {
      */
     @Transactional
     public OrderResponse pay(Long orderId) {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
 
         Order existing = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
@@ -286,7 +287,7 @@ public class OrderService {
     // =========================================================================
 
     public Page<OrderResponse> getMyOrders(Pageable pageable) {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
         return orderRepository.findByUserId(userId, pageable).map(this::toListResponse);
     }
 
@@ -298,7 +299,7 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public OrderResponse getOrder(Long orderId) {
-        Long userId = resolveUserId();
+        Long userId = securityUtils.resolveUserId();
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         // 404 (not 403) for non-owners — avoids leaking that the order exists
@@ -311,11 +312,6 @@ public class OrderService {
     // =========================================================================
     // Helpers
     // =========================================================================
-
-    protected Long resolveUserId() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username).orElseThrow().getId();
-    }
 
     private boolean isAdmin() {
         return SecurityContextHolder.getContext().getAuthentication()

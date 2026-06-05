@@ -112,7 +112,7 @@ public class CartService {
         Cart cart = findCartOrThrow(userId);
         CartItem item = findItemAndVerifyOwnership(itemId, cart.getId());
 
-        cartItemRepository.delete(item);
+        cart.getItems().remove(item);
         cart.setUpdatedAt(LocalDateTime.now());
         cartRepository.save(cart);
 

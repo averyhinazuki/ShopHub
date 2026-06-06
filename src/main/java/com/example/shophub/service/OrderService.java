@@ -101,18 +101,15 @@ public class OrderService {
     public OrderResponse checkout() {
         Long userId = securityUtils.resolveUserId();
 
-        // Step 1 — load cart + validate, returns immutable snapshot
         CartSnapshot snapshot = self.loadCartSnapshot(userId);
 
         // Tracks successfully committed deductions for compensation
         List<CheckoutItem> deducted = new ArrayList<>();
 
         try {
-            // Step 2 — sequential deduction under per-product lock
             for (CheckoutItem item : snapshot.items()) {
                 RLock lock = redissonClient.getLock("lock:product:" + item.productId());
                 try {
-                    // Step 6a — acquire lock (5s wait, 10s lease)
                     boolean acquired = lock.tryLock(5, 10, java.util.concurrent.TimeUnit.SECONDS);
                     if (!acquired) {
                         throw new RuntimeException(
@@ -120,10 +117,8 @@ public class OrderService {
                                 + " — try again shortly");
                     }
 
-                    // Step 6b — first cache deletion (before MySQL write)
                     cacheService.deleteCache(item.productId());
 
-                    // Step 6c — conditional UPDATE: the MySQL safety net
                     int rows = inventoryRepository.deductStock(item.productId(), item.qty());
                     if (rows == 0) {
                         // Lock must be released before throwing — don't hold it during unwind
@@ -152,13 +147,9 @@ public class OrderService {
                 }
             }
 
-            // Step 3 — create order atomically; called through proxy so @Transactional fires
             return self.persistOrder(snapshot.items(), userId, snapshot.cartId());
 
         } catch (Exception ex) {
-            // Step 4 — compensation: unwind all committed deductions
-            // (If @Transactional had wrapped checkout(), a rollback would only undo
-            //  the in-progress tx — already-committed deductions would still be stuck.)
             for (CheckoutItem item : deducted) {
                 try {
                     cacheService.deleteCache(item.productId());

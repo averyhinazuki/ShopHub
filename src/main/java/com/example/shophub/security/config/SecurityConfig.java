@@ -51,7 +51,6 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-                // Step 10: log authenticated requests to MongoDB after JWT auth is resolved
                 .addFilterAfter(new UserActionLogFilter(userActionLogService), JwtFilter.class);
 
         return http.build();

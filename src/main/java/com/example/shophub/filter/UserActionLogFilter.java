@@ -54,7 +54,6 @@ public class UserActionLogFilter extends OncePerRequestFilter {
             String action   = request.getMethod() + " " + request.getRequestURI();
             String ip       = request.getRemoteAddr();
 
-            // Fire-and-forget — MongoDB write on cacheEvictExecutor thread pool
             userActionLogService.logAsync(username, action, ip);
         }
     }

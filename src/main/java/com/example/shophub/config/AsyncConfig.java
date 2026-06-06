@@ -9,13 +9,6 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 
-/**
- * Enables @Async and configures a dedicated thread pool for background tasks.
- *
- * Used by:
- *  - ProductCacheService.scheduleSecondDeletion()  — delayed cache eviction (~500ms after write)
- *  - UserActionLogFilter (Step 10)                 — async MongoDB write per request
- */
 @Configuration
 @EnableAsync
 @EnableScheduling
@@ -28,9 +21,19 @@ public class AsyncConfig {
         executor.setMaxPoolSize(32);
         executor.setQueueCapacity(2000);
         executor.setThreadNamePrefix("cache-evict-");
-        // CallerRunsPolicy: if pool saturates, run on the caller thread instead of dropping.
-        // Trades request latency for guaranteed delivery of cache evictions and audit logs.
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean(name = "mongoLogExecutor")
+    public Executor mongoLogExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("mongo-log-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
         executor.initialize();
         return executor;
     }

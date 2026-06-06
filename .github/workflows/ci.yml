@@ -71,3 +71,32 @@ jobs:
 
       - name: Run tests
         run: mvn test --no-transfer-progress
+
+  publish:
+    name: Build & push Docker image
+    runs-on: ubuntu-latest
+    needs: test                          # only runs if test job passes
+    if: github.ref == 'refs/heads/main'  # only on merges to main, not PRs
+
+    permissions:
+      contents: read
+      packages: write                    # required to push to GHCR
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}  # auto-injected, no setup needed
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/shophub:latest
+            ghcr.io/${{ github.repository_owner }}/shophub:${{ github.sha }}

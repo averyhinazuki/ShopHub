@@ -3,15 +3,12 @@ package com.example.shophub.service;
 import com.example.shophub.dto.cart.CartResponse;
 import com.example.shophub.entity.*;
 import com.example.shophub.repository.jpa.*;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import com.example.shophub.security.SecurityUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -27,28 +24,13 @@ class CartServiceTest {
     @Mock CartItemRepository cartItemRepository;
     @Mock ProductRepository productRepository;
     @Mock ProductInventoryRepository inventoryRepository;
-    @Mock UserRepository userRepository;
+    @Mock SecurityUtils securityUtils;
 
     @InjectMocks CartService cartService;
 
-    @BeforeEach
-    void setUpSecurityContext() {
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("testuser", null, List.of()));
-    }
-
-    @AfterEach
-    void clearSecurityContext() {
-        SecurityContextHolder.clearContext();
-    }
-
     @Test
     void getCart_doesNotQueryInventorySeparately() {
-        // user
-        User user = new User();
-        user.setId(1L);
-        user.setUsername("testuser");
-        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(user));
+        when(securityUtils.resolveUserId()).thenReturn(1L);
 
         // product with inventory already set — simulates what @EntityGraph delivers
         Product product = new Product();

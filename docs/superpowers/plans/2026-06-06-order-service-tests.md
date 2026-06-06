@@ -26,13 +26,12 @@
 - [ ] **Step 1: Create the test file with skeleton, helpers, and the three `loadCartSnapshot` tests**
 
 ```java
-package com.example.flashsale.service;
+package com.example.shophub.service;
 
-import com.example.flashsale.entity.*;
-import com.example.flashsale.enums.ProductStatus;
-import com.example.flashsale.exception.ResourceNotFoundException;
-import com.example.flashsale.repository.jpa.*;
-import com.example.flashsale.security.SecurityUtils;
+import com.example.shophub.entity.*;
+import com.example.shophub.enums.ProductStatus;
+import com.example.shophub.repository.jpa.*;
+import com.example.shophub.security.SecurityUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,7 +50,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -60,19 +58,31 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
 
-    @Mock OrderRepository            orderRepository;
-    @Mock OrderItemRepository        orderItemRepository;
-    @Mock CartRepository             cartRepository;
-    @Mock CartItemRepository         cartItemRepository;
-    @Mock ProductInventoryRepository inventoryRepository;
-    @Mock ProductRepository          productRepository;
-    @Mock ApplicationEventPublisher  eventPublisher;
-    @Mock RedissonClient             redissonClient;
-    @Mock ProductCacheService        cacheService;
-    @Mock SecurityUtils              securityUtils;
-    @Mock RLock                      lock;
+    @Mock
+    OrderRepository orderRepository;
+    @Mock
+    OrderItemRepository orderItemRepository;
+    @Mock
+    CartRepository cartRepository;
+    @Mock
+    CartItemRepository cartItemRepository;
+    @Mock
+    ProductInventoryRepository inventoryRepository;
+    @Mock
+    ProductRepository productRepository;
+    @Mock
+    ApplicationEventPublisher eventPublisher;
+    @Mock
+    RedissonClient redissonClient;
+    @Mock
+    ProductCacheService cacheService;
+    @Mock
+    SecurityUtils securityUtils;
+    @Mock
+    RLock lock;
 
-    @InjectMocks OrderService orderService;
+    @InjectMocks
+    OrderService orderService;
 
     @BeforeEach
     void setUp() {
@@ -120,7 +130,7 @@ class OrderServiceTest {
         Order o = new Order();
         o.setId(50L);
         o.setUserId(userId);
-        o.setStatus(com.example.flashsale.enums.OrderStatus.PENDING);
+        o.setStatus(com.example.shophub.enums.OrderStatus.PENDING);
         o.setTotalAmount(BigDecimal.valueOf(20.00));
         o.setCreatedAt(LocalDateTime.now());
         return o;
@@ -239,7 +249,7 @@ void checkout_secondItemSoldOut_throwsSoldOutException_andCompensatesFirst() thr
     when(inventoryRepository.deductStock(20L, 1)).thenReturn(0); // p2 sold out
 
     assertThatThrownBy(() -> orderService.checkout())
-            .isInstanceOf(com.example.flashsale.exception.SoldOutException.class);
+            .isInstanceOf(com.example.shophub.exception.SoldOutException.class);
 
     // p1's deduction must be compensated; p2 was never deducted
     verify(inventoryRepository).restoreStock(10L, 2);
@@ -281,12 +291,16 @@ void checkout_success_returnsOrderResponse() throws Exception {
     when(inventoryRepository.deductStock(10L, 2)).thenReturn(1);
 
     // Give the saved order an ID so persistOrder can reference it
-    doAnswer(inv -> { Order o = inv.getArgument(0); o.setId(100L); return o; })
+    doAnswer(inv -> {
+        Order o = inv.getArgument(0);
+        o.setId(100L);
+        return o;
+    })
             .when(orderRepository).save(any(Order.class));
     when(productRepository.getReferenceById(10L)).thenReturn(p);
     when(orderItemRepository.findByOrderId(100L)).thenReturn(singleOrderItem(p));
 
-    com.example.flashsale.dto.OrderResponse response = orderService.checkout();
+    com.example.shophub.dto.OrderResponse response = orderService.checkout();
 
     assertThat(response).isNotNull();
     assertThat(response.getId()).isEqualTo(100L);
@@ -332,7 +346,7 @@ void pay_success_returnsOrderResponse() {
     when(orderRepository.payIfPending(eq(50L), any(LocalDateTime.class))).thenReturn(1);
     when(orderItemRepository.findByOrderId(50L)).thenReturn(List.of());
 
-    com.example.flashsale.dto.OrderResponse response = orderService.pay(50L);
+    com.example.shophub.dto.OrderResponse response = orderService.pay(50L);
 
     assertThat(response).isNotNull();
     assertThat(response.getId()).isEqualTo(50L);

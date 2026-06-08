@@ -7,7 +7,7 @@ A full-stack online shopping platform engineered for high-concurrency checkout u
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
+| :--- | :--- |
 | Backend | Java 19 · Spring Boot 3 · Spring Security |
 | Frontend | Vue 3 · Vite · Tailwind CSS |
 | Primary DB | MySQL 8 (JPA/Hibernate) |
@@ -23,7 +23,7 @@ A full-stack online shopping platform engineered for high-concurrency checkout u
 
 ### Inventory Under Contention
 
-Popular products create write storms during product launches, sales, or viral moments. Every stock deduction goes through a **per-product Redisson distributed lock** (`lock:product:{id}`), ensuring no two concurrent checkouts can oversell the same item. The same lock key is shared by checkout, admin inventory patches, and the order expiry scheduler — so all writers are serialized on the same mutex regardless of origin.
+Popular products create write storms during launches, sales, or viral moments. Every stock deduction goes through a **per-product Redisson distributed lock** (`lock:product:{id}`), ensuring no two concurrent checkouts can oversell the same item. The same lock key is shared by checkout, admin inventory patches, and the order expiry scheduler — so all writers are serialized on the same mutex regardless of origin.
 
 A MySQL **conditional `UPDATE ... WHERE stock >= ?`** sits behind the lock as a last-line consistency guarantee: even if the lock layer were bypassed or Redis became unavailable, the database itself refuses to commit an oversell. Redis serves only as a cache — MySQL remains the source of truth.
 
@@ -33,13 +33,13 @@ Product data is cached in Redis with a 60-second TTL. On any write (checkout, re
 
 1. First cache deletion — before the MySQL write
 2. MySQL write commits
-3. Async second deletion — evicts any entry re-cached by a concurrent reader in the write window
+3. Async second deletion (~500 ms later) — evicts any entry re-cached by a concurrent reader in the write window
 
 This closes the race between the write path and readers that might re-populate the cache between deletion and commit.
 
 ### Lock-Free Order Expiry
 
-Unpaid orders hold stock. A scheduled job scans for PENDING orders older than the configured timeout and cancels them, restoring stock. The cancellation uses a **conditional UPDATE**:
+Unpaid orders hold stock. A scheduled job scans for PENDING orders older than 15 minutes and cancels them, restoring stock. The cancellation uses a **conditional UPDATE**:
 
 ```sql
 UPDATE orders SET status = 'CANCELLED' WHERE id = ? AND status = 'PENDING'
@@ -51,9 +51,11 @@ If `/pay` wins first, `rowsAffected = 0` and the scheduler skips — stock stays
 
 Order creation and payment completion publish domain events to **Kafka** (`order-created`, `payment-completed` topics) using a **publish-after-commit** pattern — events fire only after the DB transaction succeeds, preventing phantom emissions on rollback. Consumers handle downstream processing asynchronously, decoupling the write path from side effects.
 
+**Acknowledged gap:** `AFTER_COMMIT` is not a full delivery guarantee. A JVM crash in the window between DB commit and the Kafka send permanently loses the event. The complete solution is the transactional outbox pattern (write the event as a DB row in the same transaction, then poll and publish). This is intentionally out of scope for this build.
+
 ### JWT Auth with Refresh Token Rotation
 
-- Access tokens: 15-minute expiry, carry username + role
+- Access tokens: 5-minute expiry, carry username + role
 - Refresh tokens: 1-day expiry, stored in Redis keyed by `jti` (UUID), enabling individual revocation
 - On refresh: old token is revoked, a new pair is issued (rotation)
 - Logout invalidates the refresh token from Redis — access tokens expire naturally
@@ -62,18 +64,20 @@ The frontend uses an Axios response interceptor to transparently call `/auth/ref
 
 ### Audit & Observability
 
-All authenticated HTTP requests are logged to **MongoDB** via a post-JWT filter (`UserActionLogFilter`), capturing username, method, path, and timestamp. Order lifecycle events (checkout, payment, expiry cancellation) write to a separate `OrderActivityLog` collection.
+All authenticated HTTP requests are logged to **MongoDB** via a post-JWT filter (`UserActionLogFilter`), capturing username, method, path, and timestamp. Order lifecycle events (checkout, payment, expiry cancellation) write to a separate `OrderActivityLog` collection via a Kafka consumer.
+
+Both MongoDB write paths are **best-effort**: exceptions are caught and swallowed. A MongoDB outage must never fail an order creation or payment — logs are observability data, not business-critical state.
 
 ---
 
-## Validation
+## Concurrency Stress Test
 
-The concurrency design is verified end-to-end with JMeter (see `jmeter/checkout-preauth-latency-test.jmx`).
+Verified end-to-end with JMeter (see `jmeter/checkout-preauth-latency-test.jmx`).
 
-**Stress test — 5000 concurrent pre-authenticated checkouts against a 10-unit SKU:**
+**5000 concurrent pre-authenticated checkouts against a 10-unit SKU:**
 
 | Metric | Result |
-|---|---|
+| :--- | :--- |
 | Successful checkouts | **10** (exactly the stock limit) |
 | Graceful 409 rejections | 4990 |
 | Oversells | **0** |
@@ -166,7 +170,7 @@ UPDATE users SET role = 'ADMIN' WHERE username = 'your-username';
 ## API Overview
 
 | Method | Path | Auth | Description |
-|---|---|---|---|
+| :--- | :--- | :--- | :--- |
 | POST | `/api/auth/register` | Public | Register (creates user + cart in one tx) |
 | POST | `/api/auth/login` | Public | Login — returns access + refresh token |
 | POST | `/api/auth/refresh` | Public | Rotate token pair |

@@ -14,12 +14,10 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 
 /**
- * Consumes order-created and payment-completed events from Kafka.
+ * Consumes order-created and payment-completed events from Kafka and writes
+ * OrderActivityLog documents to MongoDB for downstream audit/analytics.
  *
- * Step 9  — receives and logs events; confirms the full publish-after-commit pipeline works.
- * Step 10 — writes OrderActivityLog documents to MongoDB on each event.
- *
- * Note: order status is NOT updated here. The /pay endpoint already performs the
+ * Order status is NOT updated here — the /pay endpoint already performs the
  * PENDING → PAID transition via a synchronous conditional UPDATE before the
  * payment-completed event is published. The consumer's job is downstream processing
  * (logging, notifications) — not state mutation.

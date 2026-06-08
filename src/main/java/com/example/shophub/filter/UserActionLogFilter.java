@@ -16,9 +16,8 @@ import java.io.IOException;
 
 /**
  * Logs each authenticated HTTP request to MongoDB (user_action_log collection).
- *
- * Step 10 — registered inside the Spring Security filter chain, AFTER JwtFilter,
- * so SecurityContextHolder already contains the resolved Authentication when this runs.
+ * Registered inside the Spring Security filter chain after JwtFilter, so
+ * SecurityContextHolder already contains the resolved Authentication when this runs.
  *
  * Design decisions:
  *  - Runs the filter chain FIRST, then writes the log. This means the log entry is written

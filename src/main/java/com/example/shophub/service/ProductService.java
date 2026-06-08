@@ -62,19 +62,16 @@ public class ProductService {
      *   3. MISS → read MySQL → populate Redis (TTL 60s) → return
      */
     public ProductResponse getProduct(Long id) {
-        // 1. Cache hit?
         ProductResponse cached = cacheService.getDetail(id);
         if (cached != null) {
             log.debug("[Cache] HIT product:{}", id);
             return cached;
         }
-        // 2. Cache miss → MySQL
         log.debug("[Cache] MISS product:{} — loading from MySQL", id);
         Product product = findActiveOrThrow(id);
         ProductInventory inv = inventoryRepository.findByProductId(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product: " + id));
         ProductResponse response = toResponse(product, inv);
-        // 3. Populate cache
         cacheService.setDetail(id, response);
         return response;
     }
@@ -98,7 +95,6 @@ public class ProductService {
         product.setStatus(ProductStatus.ACTIVE);
         productRepository.save(product);
 
-        // Inventory row created in same tx — product never exists without inventory
         ProductInventory inv = new ProductInventory();
         inv.setProduct(product);
         inv.setTotalStock(request.getInitialStock());
@@ -138,7 +134,7 @@ public class ProductService {
     }
 
     /**
-     * Admin inventory adjustment — the full cache-aside write path (Section 6).
+     * Admin inventory adjustment.
      *
      * delta > 0 → restock  (totalStock + delta, availableStock + delta)
      * delta < 0 → correction / damaged  (availableStock + delta only)
@@ -152,7 +148,6 @@ public class ProductService {
      */
     @Transactional
     public void adjustInventory(Long productId, InventoryAdjustRequest request) {
-        // Validate product exists
         if (!productRepository.existsById(productId)) {
             throw new ResourceNotFoundException("Product not found: " + productId);
         }
@@ -176,7 +171,6 @@ public class ProductService {
             // First deletion — before the MySQL write
             cacheService.deleteCache(productId);
 
-            // MySQL update
             inventoryRepository.adjustStock(productId, delta);
             log.info("[Inventory] product:{} adjusted by delta={} reason={}", productId, delta, request.getReason());
 

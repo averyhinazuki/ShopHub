@@ -30,22 +30,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Step 7  — checkout / pay / read endpoints wired up.
- * Step 8  — checkout() restructured:
- *            - No outer @Transactional on checkout(); each deduction commits immediately.
- *            - Per-product Redisson lock serialises concurrent writers on the same product.
- *            - Cache-aside: first-deletion before MySQL write, async second-deletion after.
- *            - Manual compensation (restoreStock + cache invalidation) if any item fails.
- * Step 9  — OrderEventKafkaBridge sends to Kafka AFTER_COMMIT (bridge stub upgraded).
- * Step 11 — OrderExpiryScheduler + GET /api/orders [ADMIN].
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
-    // ── Constructor-injected (via Lombok @RequiredArgsConstructor) ───────────
     private final OrderRepository            orderRepository;
     private final OrderItemRepository        orderItemRepository;
     private final SecurityUtils              securityUtils;
@@ -81,22 +70,11 @@ public class OrderService {
     // =========================================================================
 
     /**
-     * Step 8 checkout — no outer @Transactional.
-     *
-     * Why no outer @Transactional?
-     *   Each deduction is a short committed UPDATE under its own per-product lock.
-     *   If the order-creation step (persistOrder) fails AFTER some deductions have
-     *   already been committed, @Transactional rollback cannot undo those committed
-     *   writes. Manual compensation (step 8 below) handles that instead.
-     *   This also maximises concurrency: two users buying different products never
-     *   block each other at the transaction level — only at the per-product lock level.
-     *
-     * Flow:
-     *   1. Load cart snapshot in a read-only tx (validates ACTIVE status, snapshots prices).
-     *   2. For each item: acquire lock → first-delete cache → deductStock → release lock
-     *      → schedule async second-delete.
-     *   3. Persist order + items + clear cart in a single @Transactional.
-     *   4. On any exception: restore all committed deductions (+ cache invalidation).
+     * No outer @Transactional by design: each stock deduction is a committed UPDATE
+     * under its own per-product lock. If persistOrder fails after deductions are already
+     * committed, a @Transactional rollback cannot undo them — manual compensation does.
+     * This also maximises concurrency: two users buying different products never block
+     * each other at the transaction level, only at the per-product lock level.
      */
     public OrderResponse checkout() {
         Long userId = securityUtils.resolveUserId();
@@ -282,7 +260,6 @@ public class OrderService {
         return orderRepository.findByUserId(userId, pageable).map(this::toListResponse);
     }
 
-    /** Step 11 — all orders across all users; ADMIN only. */
     @PreAuthorize("hasRole('ADMIN')")
     public Page<OrderResponse> getAllOrders(Pageable pageable) {
         return orderRepository.findAll(pageable).map(this::toListResponse);

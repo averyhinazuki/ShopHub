@@ -19,9 +19,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *   durable before any downstream system is notified.
  *
  *   Residual gap: if the JVM crashes between commit and the Kafka send, the event is lost.
- *   The production fix is the transactional outbox pattern — out of scope for this build.
- *
- * Step 9: fully wired — actual KafkaTemplate sends via OrderEventProducer.
+ *   The production fix is the transactional outbox pattern.
  */
 @Slf4j
 @Component

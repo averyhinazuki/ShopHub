@@ -25,8 +25,6 @@ import java.util.concurrent.TimeUnit;
  * Scans for PENDING orders older than {@code app.order.pending-timeout-minutes} and
  * cancels them, restoring their stock — so abandoned carts don't hold stock forever.
  *
- * Step 11.
- *
  * Race guard:
  *   {@code cancelIfPending} is a conditional UPDATE:
  *     UPDATE orders SET status = 'CANCELLED' WHERE id = ? AND status = 'PENDING'
@@ -92,8 +90,7 @@ public class OrderExpiryScheduler {
 
     private void processSingleOrder(Long orderId) {
 
-        // Step a — atomically claim the cancellation.
-        // cancelIfPending is @Transactional; it commits immediately.
+        // cancelIfPending commits immediately; rows=0 means /pay already won.
         int rows = orderRepository.cancelIfPending(orderId);
         if (rows == 0) {
             // /pay already committed — do nothing; stock was legitimately sold.
@@ -103,16 +100,13 @@ public class OrderExpiryScheduler {
 
         log.info("[Expiry] Cancelled orderId={}", orderId);
 
-        // Step b — load userId (for activity log) and item data (for stock restore)
-        // These are read-only queries; Spring Data creates short transactions automatically.
         Long userId = orderRepository.findById(orderId)
                 .map(Order::getUserId)
                 .orElse(null);
 
-        // Step c — projection query: avoids lazy-loading the Product entity
+        // Projection query avoids lazy-loading the full Product entity
         List<Object[]> items = orderItemRepository.findProductIdAndQuantityByOrderId(orderId);
 
-        // Step d — restore stock for each item under Redisson lock
         for (Object[] row : items) {
             Long productId = (Long) row[0];
             int  qty       = ((Number) row[1]).intValue();
@@ -120,7 +114,7 @@ public class OrderExpiryScheduler {
             restoreStockForItem(orderId, productId, qty);
         }
 
-        // Step e — write activity log to MongoDB (best-effort, never fails the job)
+        // Best-effort activity log — failure must never abort the expiry job
         try {
             OrderActivityLog entry = new OrderActivityLog();
             entry.setOrderId(orderId);
@@ -155,7 +149,6 @@ public class OrderExpiryScheduler {
             // First cache deletion — before the MySQL write
             cacheService.deleteCache(productId);
 
-            // MySQL stock restore (@Transactional on repo method — commits immediately)
             inventoryRepository.restoreStock(productId, qty);
 
             lock.unlock();

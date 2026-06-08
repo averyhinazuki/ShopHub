@@ -42,7 +42,6 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         userRepository.save(user);
 
-        // Cart created in same tx — every authenticated user always has a cart row
         Cart cart = new Cart();
         cart.setUserId(user.getId());
         cartRepository.save(cart);
@@ -79,7 +78,7 @@ public class AuthService {
             throw new RuntimeException("Refresh token revoked or expired");
         }
 
-        refreshTokenService.revoke(jti);   // rotate out the old token
+        refreshTokenService.revoke(jti);
         User user = userRepository.findById(userId).orElseThrow();
         return issueTokenPair(user);
     }
@@ -94,8 +93,6 @@ public class AuthService {
             refreshTokenService.revoke(jwtUtil.extractJti(token));
         }
     }
-
-    // --- private helpers ---
 
     private AuthResponse issueTokenPair(User user) {
         String accessToken = jwtUtil.generateAccessToken(user.getUsername(), user.getRole().name());

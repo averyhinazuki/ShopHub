@@ -54,7 +54,6 @@ public class CartService {
         Cart cart = findCartOrThrow(userId);
         Product product = findActiveProductOrThrow(request.getProductId());
 
-        // Upsert: find existing or create new
         CartItem item = cartItemRepository
                 .findByCartIdAndProductId(cart.getId(), product.getId())
                 .orElseGet(() -> {
@@ -69,7 +68,6 @@ public class CartService {
         item.setQuantity(newQty);
         cartItemRepository.save(item);
 
-        // Touch updatedAt
         cart.setUpdatedAt(LocalDateTime.now());
         cartRepository.save(cart);
 

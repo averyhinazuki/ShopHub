@@ -84,14 +84,10 @@ The concurrency design is verified end-to-end with JMeter (see `jmeter/checkout-
 Reproduce with:
 
 ```bash
-# 1. Pre-register 5000 users and populate carts
-python jmeter/setup.py
-
-# 2. Run the test (within JWT TTL)
 jmeter -n -t jmeter/checkout-preauth-latency-test.jmx -l results.jtl -e -o report/
 ```
 
-The tearDown asserts `availableStock = 0` — any oversell fails the test loudly.
+The test uses pre-authenticated requests and asserts `availableStock = 0` at teardown — any oversell fails loudly.
 
 ---
 
@@ -119,32 +115,50 @@ The tearDown asserts `availableStock = 0` — any oversell fails the test loudly
 
 ## Running Locally
 
-**Prerequisites:** Java 19, Node 18+, MySQL 8, Redis, MongoDB, Kafka, Zookeeper
+**Prerequisites:** Java 19, Node 18+, Docker
+
+**1. Start infrastructure**
+
+```bash
+docker compose up -d
+```
+
+Starts MySQL, Redis, MongoDB, Kafka, and Zookeeper. Spring Boot auto-creates all tables on first run via `ddl-auto: update`.
+
+**2. Run the app**
 
 ```bash
 # Backend
 ./mvnw spring-boot:run
 
-# Frontend
+# Frontend (separate terminal)
 cd frontend
 npm install
 npm run dev
 ```
 
-Configure credentials in `src/main/resources/application.yml`:
+**3. Configure credentials** in `src/main/resources/application.yml`:
 
 ```yaml
-spring.datasource:
-  url: jdbc:mysql://localhost:3306/flash_sale_db
-  username: root
-  password: yourpassword
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/flash_sale_db
+    username: root
+    password: yourpassword
 
 app:
-  jwt.secret: your-256-bit-secret
+  jwt:
+    secret: your-256-bit-secret
   cloudinary:
     cloud-name: your-cloud-name
     api-key: your-api-key
     api-secret: your-api-secret
+```
+
+**4. Seed an admin user** — register via the API, then:
+
+```sql
+UPDATE users SET role = 'ADMIN' WHERE username = 'your-username';
 ```
 
 ---
@@ -153,21 +167,27 @@ app:
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/api/auth/register` | Public | Register |
-| POST | `/api/auth/login` | Public | Login |
+| POST | `/api/auth/register` | Public | Register (creates user + cart in one tx) |
+| POST | `/api/auth/login` | Public | Login — returns access + refresh token |
 | POST | `/api/auth/refresh` | Public | Rotate token pair |
 | POST | `/api/auth/logout` | User | Revoke refresh token |
-| GET | `/api/products` | Public | List products (paginated, filterable) |
-| GET | `/api/products/{id}` | Public | Product detail (cache-aside) |
-| POST | `/api/products` | Admin | Create product + inventory |
-| PUT | `/api/products/{id}` | Admin | Update product |
-| PATCH | `/api/products/{id}/inventory` | Admin | Adjust stock |
-| GET | `/api/cart` | User | Get cart |
-| POST | `/api/cart/items` | User | Add to cart |
-| DELETE | `/api/cart/items/{id}` | User | Remove from cart |
-| POST | `/api/orders/checkout` | User | Checkout cart |
-| POST | `/api/orders/{id}/pay` | User | Pay for order |
-| GET | `/api/orders` | User/Admin | List orders |
+| GET | `/api/categories` | Public | List categories |
+| POST | `/api/categories` | Admin | Create category |
+| PUT | `/api/categories/{id}` | Admin | Update category |
+| GET | `/api/products` | Public | List products (paginated; `?category=`, `?search=`) |
+| GET | `/api/products/{id}` | Public | Product detail + live stock (cache-aside) |
+| POST | `/api/products` | Admin | Create product + inventory (one tx) |
+| PUT | `/api/products/{id}` | Admin | Update product; `status=INACTIVE` soft-deletes |
+| PATCH | `/api/products/{id}/inventory` | Admin | Adjust stock by delta |
+| GET | `/api/cart` | User | Get cart with live stock |
+| POST | `/api/cart/items` | User | Add / increment item |
+| PUT | `/api/cart/items/{id}` | User | Set item quantity |
+| DELETE | `/api/cart/items/{id}` | User | Remove item |
+| POST | `/api/orders/checkout` | User | Checkout cart (hot path) |
+| GET | `/api/orders/me` | User | My orders (paginated) |
+| GET | `/api/orders/{id}` | User/Admin | Order detail |
+| POST | `/api/orders/{id}/pay` | User/Admin | Mock payment |
+| GET | `/api/orders` | Admin | All orders (paginated) |
 | POST | `/api/upload` | Admin | Upload image to Cloudinary |
 
 ---
@@ -175,7 +195,7 @@ app:
 ## Project Structure
 
 ```
-src/main/java/com/example/flashsale/
+src/main/java/com/example/shophub/
 ├── controller/        # REST endpoints
 ├── service/           # Business logic
 ├── entity/            # JPA entities

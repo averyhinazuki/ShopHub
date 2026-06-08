@@ -1,0 +1,246 @@
+ShopHub — Technology Overview
+==============================
+Audience: personal study + technical interviews
+Covers: Redis, Redisson, Kafka, MongoDB
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. REDIS & REDISSON
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT & WHY
+----------
+Redis is an in-memory key-value store used here for two distinct purposes:
+product caching (to reduce MySQL read load) and refresh token storage (to
+support stateless JWT revocation). Redisson is a Java client on top of Redis
+that also provides distributed locking primitives, which are used to serialize
+concurrent writes to the same product's stock.
+
+
+1a. Product Cache (cache-aside pattern)
+---------------------------------------
+All product cache logic lives in ProductCacheService.
+
+Two keys per product, both with TTL = 60 seconds:
+  product:{id}:detail  →  full ProductResponse serialized as JSON
+  product:{id}:stock   →  availableStock as a plain integer string
+
+READ PATH (ProductService.getProduct):
+  1. Check Redis for product:{id}:detail
+  2. HIT  → return cached value immediately (no MySQL query)
+  3. MISS → query MySQL, build ProductResponse, write both keys to Redis,
+             then return the response
+
+List endpoints (listProducts) do NOT use the cache — only single-product
+detail requests are cached. This avoids the complexity of invalidating
+paginated list caches on every write.
+
+
+1b. Delayed Double-Deletion (cache invalidation on writes)
+----------------------------------------------------------
+Simple "delete on write" is not safe under high concurrency. Consider:
+
+  Thread A (writer):  delete cache key  →  UPDATE MySQL
+  Thread B (reader):  [between A's delete and A's commit]
+                      cache miss → reads OLD value from MySQL → writes it
+                      back into cache
+
+Thread B has now re-populated the cache with stale data, and it will stay
+stale for up to 60 seconds.
+
+The fix used here is the delayed double-deletion pattern:
+  1. deleteCache(id)               — synchronous, before the MySQL write
+  2. MySQL write commits
+  3. scheduleSecondDeletion(id)    — async, fires ~500ms after the write
+
+The second deletion runs on the cacheEvictExecutor thread pool (8 core /
+32 max threads) via @Async. It kills any stale value that a concurrent
+reader cached in the brief window between steps 1 and 2.
+
+ProductCacheService MUST be a separate Spring bean from ProductService
+so that Spring's AOP proxy intercepts the @Async annotation. A self-call
+inside the same bean bypasses the proxy and the async behavior silently
+disappears.
+
+
+1c. Distributed Per-Product Locks (Redisson)
+--------------------------------------------
+Stock deduction and restoration are not atomic at the application level —
+they involve a cache delete, a MySQL UPDATE, and a second cache delete.
+Without a lock, two concurrent checkouts for the same product can interleave
+these steps and produce incorrect stock values.
+
+Lock key pattern:  lock:product:{id}
+Lock settings:     tryLock(waitTime=5s, leaseTime=10s)
+
+The same lock key is used in three places:
+  - OrderService.checkout()          — deducts stock per item
+  - ProductService.adjustInventory() — admin stock corrections
+  - OrderExpiryScheduler             — restores stock on expiry
+
+Because all three share the same key, they fully serialize against each
+other for any given product. Two checkouts for different products do NOT
+block each other.
+
+The negative-delta guard in adjustInventory (checking that stock won't go
+below zero) is performed INSIDE the lock. This is intentional: reading the
+current stock outside the lock and then writing inside it would create a
+TOCTOU (time-of-check to time-of-use) race where a concurrent checkout
+could deduct between the read and the write.
+
+
+1d. Refresh Token Storage
+--------------------------
+JWT access tokens are short-lived (5 minutes) and stateless — they cannot
+be individually revoked before expiry. Refresh tokens are long-lived (1 day)
+and must support immediate revocation on logout.
+
+Key pattern:  refresh:{jti}  →  userId (string)
+TTL:          mirrors the refresh token's expiry
+
+On /login or /register:
+  - A refresh token is issued with a unique jti (JWT ID, a UUID)
+  - The jti is stored in Redis with the user's ID as the value
+
+On /refresh:
+  - Validate the token's signature
+  - Look up the jti in Redis — absence means revoked or expired → 401
+  - Delete the old jti (rotation: each refresh issues a brand-new pair)
+
+On /logout:
+  - Delete the jti from Redis immediately
+  - The access token expires on its own within 5 minutes (no blacklist needed)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. KAFKA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT & WHY
+----------
+Kafka is a distributed event streaming platform used here to decouple the
+order lifecycle from downstream processing (activity logging, and future
+notifications or analytics). The core business flow (deduct stock, create
+order, process payment) runs synchronously against MySQL. Kafka carries the
+events to anything that needs to react asynchronously.
+
+Topics:
+  order-created       — published when a checkout succeeds
+  payment-completed   — published when /pay is called and succeeds
+
+
+2a. Two-Layer Event Design
+---------------------------
+Publishing to Kafka directly inside a @Transactional method is unsafe:
+
+  Problem: if the transaction rolls back after the Kafka send, you've told
+  downstream systems about an order that never actually existed in the DB.
+
+The solution is a two-layer architecture:
+
+  Layer 1 — Spring in-process domain event
+    OrderService publishes an OrderCreatedDomainEvent via Spring's
+    ApplicationEventPublisher. This is a plain Java object passed in-memory.
+    It happens INSIDE the transaction but does not touch Kafka yet.
+
+  Layer 2 — @TransactionalEventListener(AFTER_COMMIT)
+    OrderEventKafkaBridge listens for the domain event. The AFTER_COMMIT
+    phase means this listener only fires after the DB transaction has
+    successfully committed. It then calls OrderEventProducer, which sends
+    the event to Kafka via KafkaTemplate.
+
+Result: Kafka never receives an event for a transaction that rolled back.
+
+
+2b. Acknowledged Gap
+---------------------
+AFTER_COMMIT is not a full guarantee. If the JVM crashes in the window
+between the DB commit and the Kafka send, the event is permanently lost.
+
+The complete solution is the transactional outbox pattern: write the event
+as a row in the DB inside the same transaction, then have a separate
+process poll that table and publish to Kafka. This is acknowledged in the
+codebase but intentionally out of scope for this build.
+
+
+2c. Consumer
+------------
+OrderEventConsumer listens to both topics with @KafkaListener. On each
+message it:
+  1. Deserializes the JSON payload into the event DTO
+  2. Writes an OrderActivityLog document to MongoDB
+
+Importantly, the consumer does NOT update order status. The PENDING → PAID
+transition is already done synchronously by /pay via a conditional UPDATE
+(payIfPending) before the event is ever published. The consumer's job is
+purely downstream: logging, and in a real system, triggering emails or
+warehouse notifications.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. MONGODB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT & WHY
+----------
+MongoDB is used exclusively for append-only audit and activity logs — not
+for any transactional data. MySQL owns all state that requires ACID
+guarantees (orders, stock, carts). MongoDB handles high-volume, schema-
+flexible write workloads where occasional loss is acceptable and a hard
+failure must never propagate back to the user.
+
+Two collections:
+  order_activity_log  — order lifecycle events
+  user_action_log     — per-request audit trail
+
+
+3a. order_activity_log
+-----------------------
+Written by two independent sources:
+
+  Kafka consumer (OrderEventConsumer):
+    - ORDER_CREATED    — when a checkout succeeds
+    - PAYMENT_COMPLETED — when /pay succeeds
+
+  Expiry scheduler (OrderExpiryScheduler):
+    - EXPIRED_CANCELLED — when a PENDING order times out and is cancelled
+
+Each document stores: orderId, userId, event type, timestamp.
+
+This gives a complete lifecycle audit trail for every order without
+touching the MySQL orders table with extra columns.
+
+
+3b. user_action_log
+--------------------
+Written for every authenticated HTTP request.
+
+Flow:
+  1. JwtFilter resolves the JWT and sets the Authentication in
+     SecurityContextHolder
+  2. UserActionLogFilter runs next in the filter chain
+  3. It lets the full request complete first (filterChain.doFilter)
+  4. After the response is committed, it calls
+     UserActionLogService.logAsync(username, action, ip)
+  5. logAsync is @Async("mongoLogExecutor") — it returns immediately to
+     the filter, then writes to MongoDB on a background thread
+
+The mongoLogExecutor thread pool is deliberately small (2 core / 8 max)
+with a DiscardPolicy on overflow. If the pool is full, the log entry is
+silently dropped — preferable to blocking the request thread or crashing.
+
+Anonymous requests (unauthenticated, e.g. browsing products) are skipped
+entirely — there is no userId to associate with the log entry.
+
+
+3c. Best-Effort Write Pattern
+------------------------------
+Both MongoDB write paths are wrapped in try/catch blocks. Any exception
+is logged as a warning and swallowed. This is intentional:
+
+  - A MongoDB outage must never fail an order creation or a payment
+  - Logs are observability data, not business-critical state
+  - The main flow (MySQL + Redis + Kafka) is entirely unaffected
+
+This is a deliberate trade-off: strong consistency where it matters
+(stock, orders), eventual/best-effort where it doesn't (logs).

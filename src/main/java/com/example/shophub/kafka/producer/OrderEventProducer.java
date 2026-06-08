@@ -1,6 +1,7 @@
 package com.example.shophub.kafka.producer;
 
 import com.example.shophub.config.KafkaTopicConfig;
+import com.example.shophub.kafka.event.CheckoutRequestedEvent;
 import com.example.shophub.kafka.event.OrderCreatedEvent;
 import com.example.shophub.kafka.event.PaymentCompletedEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -66,6 +67,28 @@ public class OrderEventProducer {
             });
         } catch (JsonProcessingException e) {
             log.error("[Kafka] Serialization error for PaymentCompletedEvent: {}", e.getMessage());
+        }
+    }
+
+    public void sendCheckoutRequestedEvent(CheckoutRequestedEvent event) {
+        try {
+            String payload = objectMapper.writeValueAsString(event);
+            CompletableFuture<SendResult<String, String>> future =
+                    kafkaTemplate.send(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, event.getCheckoutId(), payload);
+
+            future.whenComplete((result, ex) -> {
+                if (ex == null) {
+                    log.info("[Kafka] checkout-requested sent: checkoutId={} partition={} offset={}",
+                            event.getCheckoutId(),
+                            result.getRecordMetadata().partition(),
+                            result.getRecordMetadata().offset());
+                } else {
+                    log.error("[Kafka] Failed to send checkout-requested for checkoutId={}: {}",
+                            event.getCheckoutId(), ex.getMessage());
+                }
+            });
+        } catch (JsonProcessingException e) {
+            log.error("[Kafka] Serialization error for CheckoutRequestedEvent: {}", e.getMessage());
         }
     }
 }

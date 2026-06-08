@@ -64,6 +64,8 @@ app:
     pending-timeout-minutes: 15
     expiry-job-interval-seconds: 60
     expiry-job-batch-size: 100
+  checkout:
+    status-ttl-minutes: 30
   cloudinary:
     cloud-name: dlxamalb1
     api-key: 559889381252938

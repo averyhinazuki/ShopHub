@@ -1,34 +1,43 @@
 package com.example.shophub.service;
 
 import com.example.shophub.dto.OrderResponse;
+import com.example.shophub.dto.order.CheckoutStatusResponse;
 import com.example.shophub.dto.order.OrderItemResponse;
 import com.example.shophub.entity.*;
 import com.example.shophub.enums.OrderStatus;
 import com.example.shophub.enums.ProductStatus;
 import com.example.shophub.exception.ResourceNotFoundException;
 import com.example.shophub.exception.SoldOutException;
+import com.example.shophub.kafka.event.CheckoutRequestedEvent;
 import com.example.shophub.kafka.event.OrderCreatedDomainEvent;
 import com.example.shophub.kafka.event.PaymentCompletedDomainEvent;
+import com.example.shophub.kafka.producer.OrderEventProducer;
 import com.example.shophub.repository.jpa.*;
 import com.example.shophub.security.SecurityUtils;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -45,6 +54,12 @@ public class OrderService {
     private final ApplicationEventPublisher  eventPublisher;
     private final RedissonClient             redissonClient;
     private final ProductCacheService        cacheService;
+    private final StringRedisTemplate        redisTemplate;
+    private final ObjectMapper               objectMapper;
+    private final OrderEventProducer         kafkaProducer;
+
+    @Value("${app.checkout.status-ttl-minutes:30}")
+    private int checkoutStatusTtlMinutes;
 
     /**
      * Self-injection: Spring injects the AOP proxy of this bean back as a field.
@@ -70,18 +85,55 @@ public class OrderService {
     // =========================================================================
 
     /**
-     * No outer @Transactional by design: each stock deduction is a committed UPDATE
-     * under its own per-product lock. If persistOrder fails after deductions are already
-     * committed, a @Transactional rollback cannot undo them — manual compensation does.
-     * This also maximises concurrency: two users buying different products never block
-     * each other at the transaction level, only at the per-product lock level.
+     * Async checkout entry point: validates the cart, publishes a checkout-requested
+     * Kafka event, and returns 202 Accepted with a checkoutId. The consumer does the
+     * actual stock deduction and order creation. Client polls getCheckoutStatus().
      */
-    public OrderResponse checkout() {
+    public CheckoutStatusResponse initiateCheckout() {
         Long userId = securityUtils.resolveUserId();
 
-        CartSnapshot snapshot = self.loadCartSnapshot(userId);
+        Cart cart = cartRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cart not found for user " + userId));
+        List<CartItem> items = cartItemRepository.findByCartId(cart.getId());
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("Cart is empty — nothing to checkout");
+        }
 
-        // Tracks successfully committed deductions for compensation
+        String checkoutId = UUID.randomUUID().toString();
+        CheckoutStatusResponse pending = CheckoutStatusResponse.builder()
+                .checkoutId(checkoutId)
+                .status("PENDING")
+                .build();
+
+        try {
+            redisTemplate.opsForValue().set(
+                    "checkout:" + checkoutId,
+                    objectMapper.writeValueAsString(pending),
+                    Duration.ofMinutes(checkoutStatusTtlMinutes));
+        } catch (JsonProcessingException e) {
+            log.error("[Checkout] Failed to serialize PENDING status for checkoutId={}", checkoutId);
+        }
+
+        kafkaProducer.sendCheckoutRequestedEvent(CheckoutRequestedEvent.builder()
+                .checkoutId(checkoutId)
+                .userId(userId)
+                .requestedAt(LocalDateTime.now())
+                .build());
+
+        log.info("[Checkout] Accepted: checkoutId={} userId={}", checkoutId, userId);
+        return pending;
+    }
+
+    /**
+     * Called by CheckoutRequestedConsumer — same stock-deduction and order-creation
+     * logic as the former synchronous checkout(), but takes userId as a parameter
+     * instead of reading from SecurityContext (consumer runs on a Kafka listener thread).
+     *
+     * No outer @Transactional by design: each stock deduction is a committed UPDATE
+     * under its own per-product lock. Compensation handles rollback if persistOrder fails.
+     */
+    public OrderResponse processCheckout(Long userId) {
+        CartSnapshot snapshot = self.loadCartSnapshot(userId);
         List<CheckoutItem> deducted = new ArrayList<>();
 
         try {
@@ -94,55 +146,56 @@ public class OrderService {
                                 "Could not acquire lock for product " + item.productId()
                                 + " — try again shortly");
                     }
-
                     cacheService.deleteCache(item.productId());
-
                     int rows = inventoryRepository.deductStock(item.productId(), item.qty());
                     if (rows == 0) {
-                        // Lock must be released before throwing — don't hold it during unwind
                         lock.unlock();
                         throw new SoldOutException(item.productId());
                     }
-
-                    // Deduction committed — track it, release lock, schedule second deletion
                     deducted.add(item);
                     lock.unlock();
-                    // Async: kills any stale cache entry a reader may have cached between
-                    // the first deletion (step 6b) and the MySQL commit (step 6c)
                     cacheService.scheduleSecondDeletion(item.productId());
-
                     log.debug("[Checkout] Deducted productId={} qty={}", item.productId(), item.qty());
-
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     if (lock.isHeldByCurrentThread()) lock.unlock();
                     throw new RuntimeException("Lock wait interrupted for product " + item.productId());
                 } catch (RuntimeException e) {
-                    // Covers SoldOutException (already unlocked above) and any other runtime failure.
-                    // isHeldByCurrentThread() guard ensures we don't double-unlock.
                     if (lock.isHeldByCurrentThread()) lock.unlock();
                     throw e;
                 }
             }
-
             return self.persistOrder(snapshot.items(), userId, snapshot.cartId());
-
         } catch (Exception ex) {
             for (CheckoutItem item : deducted) {
                 try {
                     cacheService.deleteCache(item.productId());
                     inventoryRepository.restoreStock(item.productId(), item.qty());
                     cacheService.scheduleSecondDeletion(item.productId());
-                    log.info("[Checkout][Compensation] Restored productId={} qty={}",
-                            item.productId(), item.qty());
+                    log.info("[Checkout][Compensation] Restored productId={} qty={}", item.productId(), item.qty());
                 } catch (Exception compensationEx) {
-                    // Compensation itself failed — stock may leak.
-                    // Production fix: transactional outbox / durable compensation queue.
                     log.error("[Checkout][Compensation] FAILED to restore productId={} qty={}: {}",
                             item.productId(), item.qty(), compensationEx.getMessage());
                 }
             }
-            throw ex; // re-throw so controller maps to the right HTTP status
+            throw ex;
+        }
+    }
+
+    /**
+     * Returns current checkout status from Redis.
+     * Falls back to PENDING if key is absent or cannot be deserialized.
+     */
+    public CheckoutStatusResponse getCheckoutStatus(String checkoutId) {
+        String json = redisTemplate.opsForValue().get("checkout:" + checkoutId);
+        if (json == null) {
+            return CheckoutStatusResponse.builder().checkoutId(checkoutId).status("PENDING").build();
+        }
+        try {
+            return objectMapper.readValue(json, CheckoutStatusResponse.class);
+        } catch (JsonProcessingException e) {
+            log.error("[Checkout] Failed to deserialize status for checkoutId={}", checkoutId);
+            return CheckoutStatusResponse.builder().checkoutId(checkoutId).status("PENDING").build();
         }
     }
 

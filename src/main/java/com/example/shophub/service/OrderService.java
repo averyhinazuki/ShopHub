@@ -316,9 +316,4 @@ public class OrderService {
         r.setLineTotal(item.getPriceAtPurchase().multiply(BigDecimal.valueOf(item.getQuantity())));
         return r;
     }
-
-    // Kept for backward compatibility with any callers referencing the old signature
-    protected OrderResponse toResponse(Order order) {
-        return toListResponse(order);
-    }
 }

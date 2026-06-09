@@ -8,9 +8,12 @@ import com.example.shophub.repository.mongo.OrderActivityLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -21,7 +24,8 @@ import java.time.LocalDateTime;
  *
  * Idempotency: duplicate deliveries (same orderId key) are skipped via Redis dedup.
  * Malformed JSON: logged and skipped — no retry on poison pills.
- * Other exceptions propagate so the Kafka error handler can decide (retry/DLT added in M3).
+ * Other exceptions propagate so @RetryableTopic retries up to 3 times with exponential backoff.
+ * After retry exhaustion: @DltHandler fires and logs for manual inspection/alerting.
  */
 @Slf4j
 @Component
@@ -32,6 +36,7 @@ public class OrderEventConsumer {
     private final OrderActivityLogRepository activityLogRepository;
     private final ConsumerIdempotencyGuard   idempotencyGuard;
 
+    @RetryableTopic(attempts = "4", backoff = @Backoff(delay = 1000, multiplier = 2.0), autoCreateTopics = "true")
     @KafkaListener(topics = KafkaTopicConfig.ORDER_CREATED_TOPIC, groupId = "flash-sale-group")
     public void handleOrderCreated(String message, @Header(KafkaHeaders.RECEIVED_KEY) String key) {
         if (idempotencyGuard.isAlreadyProcessed(KafkaTopicConfig.ORDER_CREATED_TOPIC, key)) {
@@ -60,6 +65,7 @@ public class OrderEventConsumer {
         idempotencyGuard.markProcessed(KafkaTopicConfig.ORDER_CREATED_TOPIC, key);
     }
 
+    @RetryableTopic(attempts = "4", backoff = @Backoff(delay = 1000, multiplier = 2.0), autoCreateTopics = "true")
     @KafkaListener(topics = KafkaTopicConfig.PAYMENT_COMPLETED_TOPIC, groupId = "flash-sale-group")
     public void handlePaymentCompleted(String message, @Header(KafkaHeaders.RECEIVED_KEY) String key) {
         if (idempotencyGuard.isAlreadyProcessed(KafkaTopicConfig.PAYMENT_COMPLETED_TOPIC, key)) {
@@ -86,5 +92,12 @@ public class OrderEventConsumer {
         activityLogRepository.save(entry);
 
         idempotencyGuard.markProcessed(KafkaTopicConfig.PAYMENT_COMPLETED_TOPIC, key);
+    }
+
+    @DltHandler
+    public void handleDlt(String message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+        // Message exhausted all retries — log for manual inspection or alerting pipeline
+        log.error("[Kafka][DLT] Retries exhausted on topic={} — manual intervention required: {}",
+                topic, message);
     }
 }

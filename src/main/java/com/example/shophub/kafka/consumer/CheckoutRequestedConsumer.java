@@ -12,9 +12,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -25,8 +28,9 @@ import java.time.Duration;
  * result (SUCCESS or FAILED) to Redis so clients can poll for it.
  *
  * Idempotency: duplicate deliveries (same checkoutId key) are skipped via Redis dedup.
- * SoldOutException: terminal — writes FAILED to Redis, does NOT rethrow.
- * Other exceptions: rethrown so the default Kafka error handler can log and commit offset.
+ * SoldOutException: terminal — writes FAILED to Redis, does NOT rethrow (no retry desired).
+ * Other exceptions: rethrown so @RetryableTopic retries up to 3 times with exponential backoff.
+ * After retry exhaustion: @DltHandler fires and writes FAILED to Redis.
  */
 @Slf4j
 @Component
@@ -41,6 +45,7 @@ public class CheckoutRequestedConsumer {
     @Value("${app.checkout.status-ttl-minutes:30}")
     private int checkoutStatusTtlMinutes;
 
+    @RetryableTopic(attempts = "4", backoff = @Backoff(delay = 1000, multiplier = 2.0), autoCreateTopics = "true")
     @KafkaListener(topics = KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, groupId = "flash-sale-group")
     public void handleCheckoutRequested(
             String message,
@@ -89,6 +94,21 @@ public class CheckoutRequestedConsumer {
             log.error("[Kafka][checkout-requested] Error for checkoutId={}: {}",
                     event.getCheckoutId(), e.getMessage());
             throw e;
+        }
+    }
+
+    @DltHandler
+    public void handleDlt(String message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+        log.error("[Kafka][DLT] Retries exhausted on topic={}: {}", topic, message);
+        try {
+            CheckoutRequestedEvent event = objectMapper.readValue(message, CheckoutRequestedEvent.class);
+            writeStatus(event.getCheckoutId(), CheckoutStatusResponse.builder()
+                    .checkoutId(event.getCheckoutId())
+                    .status("FAILED")
+                    .failureReason("Checkout exhausted all retries — please try again")
+                    .build());
+        } catch (JsonProcessingException e) {
+            log.error("[Kafka][DLT] Cannot deserialize DLT message — checkout status not updated: {}", e.getMessage());
         }
     }
 

@@ -110,4 +110,18 @@ class CheckoutRequestedConsumerTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("DB unavailable");
     }
+
+    @Test
+    void handleDlt_writesFailedStatusToRedis() throws Exception {
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+
+        consumer.handleDlt(eventJson, KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC + ".DLT");
+
+        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOps).set(eq("checkout:checkout-123"), jsonCaptor.capture(), eq(Duration.ofMinutes(30)));
+
+        CheckoutStatusResponse saved = objectMapper.readValue(jsonCaptor.getValue(), CheckoutStatusResponse.class);
+        assertThat(saved.getStatus()).isEqualTo("FAILED");
+        assertThat(saved.getFailureReason()).contains("exhausted");
+    }
 }

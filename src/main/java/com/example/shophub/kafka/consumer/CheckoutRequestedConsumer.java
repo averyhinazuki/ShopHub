@@ -13,6 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -22,23 +24,33 @@ import java.time.Duration;
  * Runs the stock-deduction + order-creation logic asynchronously and writes the
  * result (SUCCESS or FAILED) to Redis so clients can poll for it.
  *
+ * Idempotency: duplicate deliveries (same checkoutId key) are skipped via Redis dedup.
  * SoldOutException: terminal — writes FAILED to Redis, does NOT rethrow.
- * Other exceptions: rethrown so they propagate (retry/DLT added in a later milestone).
+ * Other exceptions: rethrown so the default Kafka error handler can log and commit offset.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class CheckoutRequestedConsumer {
 
-    private final OrderService        orderService;
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper        objectMapper;
+    private final OrderService             orderService;
+    private final ConsumerIdempotencyGuard idempotencyGuard;
+    private final StringRedisTemplate      redisTemplate;
+    private final ObjectMapper             objectMapper;
 
     @Value("${app.checkout.status-ttl-minutes:30}")
     private int checkoutStatusTtlMinutes;
 
     @KafkaListener(topics = KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, groupId = "flash-sale-group")
-    public void handleCheckoutRequested(String message) {
+    public void handleCheckoutRequested(
+            String message,
+            @Header(KafkaHeaders.RECEIVED_KEY) String key) {
+
+        if (idempotencyGuard.isAlreadyProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, key)) {
+            log.warn("[Kafka][checkout-requested] Duplicate checkoutId={} — skipping", key);
+            return;
+        }
+
         CheckoutRequestedEvent event;
         try {
             event = objectMapper.readValue(message, CheckoutRequestedEvent.class);
@@ -57,6 +69,7 @@ public class CheckoutRequestedConsumer {
                     .status("SUCCESS")
                     .orderId(order.getId())
                     .build());
+            idempotencyGuard.markProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, key);
             log.info("[Kafka][checkout-requested] checkoutId={} → orderId={}",
                     event.getCheckoutId(), order.getId());
 
@@ -68,8 +81,11 @@ public class CheckoutRequestedConsumer {
                     .status("FAILED")
                     .failureReason("Sold out: " + e.getMessage())
                     .build());
+            // Mark processed so a retry doesn't attempt the same sold-out purchase again
+            idempotencyGuard.markProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, key);
 
         } catch (Exception e) {
+            // Transient failure (DB unavailable, lock timeout) — rethrow for error handler
             log.error("[Kafka][checkout-requested] Error for checkoutId={}: {}",
                     event.getCheckoutId(), e.getMessage());
             throw e;

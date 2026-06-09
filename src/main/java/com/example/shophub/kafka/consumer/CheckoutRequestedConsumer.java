@@ -74,7 +74,10 @@ public class CheckoutRequestedConsumer {
                     .status("SUCCESS")
                     .orderId(order.getId())
                     .build());
-            idempotencyGuard.markProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, key);
+            // Swallow dedup-write failure: status was already written to Redis and the cart
+            // is now cleared, so a retry would only create "cart empty" failures → DLT.
+            // Better to commit the offset here than trigger a pointless retry chain.
+            safeMarkProcessed(key);
             log.info("[Kafka][checkout-requested] checkoutId={} → orderId={}",
                     event.getCheckoutId(), order.getId());
 
@@ -86,11 +89,10 @@ public class CheckoutRequestedConsumer {
                     .status("FAILED")
                     .failureReason("Sold out: " + e.getMessage())
                     .build());
-            // Mark processed so a retry doesn't attempt the same sold-out purchase again
-            idempotencyGuard.markProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, key);
+            safeMarkProcessed(key);
 
         } catch (Exception e) {
-            // Transient failure (DB unavailable, lock timeout) — rethrow for error handler
+            // Transient failure (DB unavailable, lock timeout) — rethrow for @RetryableTopic
             log.error("[Kafka][checkout-requested] Error for checkoutId={}: {}",
                     event.getCheckoutId(), e.getMessage());
             throw e;
@@ -102,6 +104,18 @@ public class CheckoutRequestedConsumer {
         log.error("[Kafka][DLT] Retries exhausted on topic={}: {}", topic, message);
         try {
             CheckoutRequestedEvent event = objectMapper.readValue(message, CheckoutRequestedEvent.class);
+            // Guard: a rare Redis blip between writeStatus(SUCCESS) and markProcessed could
+            // cause this DLT delivery. Do not overwrite a SUCCESS with FAILED.
+            String existing = redisTemplate.opsForValue().get("checkout:" + event.getCheckoutId());
+            if (existing != null) {
+                try {
+                    if ("SUCCESS".equals(objectMapper.readValue(existing, CheckoutStatusResponse.class).getStatus())) {
+                        log.warn("[Kafka][DLT] Status already SUCCESS for checkoutId={} — skipping FAILED write",
+                                event.getCheckoutId());
+                        return;
+                    }
+                } catch (JsonProcessingException ignored) { /* corrupt entry — fall through to write FAILED */ }
+            }
             writeStatus(event.getCheckoutId(), CheckoutStatusResponse.builder()
                     .checkoutId(event.getCheckoutId())
                     .status("FAILED")
@@ -109,6 +123,15 @@ public class CheckoutRequestedConsumer {
                     .build());
         } catch (JsonProcessingException e) {
             log.error("[Kafka][DLT] Cannot deserialize DLT message — checkout status not updated: {}", e.getMessage());
+        }
+    }
+
+    private void safeMarkProcessed(String key) {
+        try {
+            idempotencyGuard.markProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, key);
+        } catch (Exception e) {
+            log.warn("[Kafka][checkout-requested] Dedup mark failed for key={} — status already written, offset will commit: {}",
+                    key, e.getMessage());
         }
     }
 

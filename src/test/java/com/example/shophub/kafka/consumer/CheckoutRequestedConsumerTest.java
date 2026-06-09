@@ -52,6 +52,8 @@ class CheckoutRequestedConsumerTest {
         eventJson = objectMapper.writeValueAsString(event);
     }
 
+    // ── handleCheckoutRequested ───────────────────────────────────────────────
+
     @Test
     void handleCheckoutRequested_skipsWhenAlreadyProcessed() {
         when(idempotencyGuard.isAlreadyProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, "checkout-123"))
@@ -84,6 +86,23 @@ class CheckoutRequestedConsumerTest {
     }
 
     @Test
+    void handleCheckoutRequested_markProcessedFails_doesNotRethrow() throws Exception {
+        // Simulates the edge case: processing succeeds, status written, but dedup Redis write fails.
+        // Handler must NOT rethrow — offset should commit so @RetryableTopic doesn't retry a completed checkout.
+        when(idempotencyGuard.isAlreadyProcessed(any(), any())).thenReturn(false);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        OrderResponse orderResponse = new OrderResponse();
+        orderResponse.setId(99L);
+        when(orderService.processCheckout(1L)).thenReturn(orderResponse);
+        doThrow(new RuntimeException("Redis blip")).when(idempotencyGuard).markProcessed(any(), any());
+
+        assertThatNoException().isThrownBy(
+                () -> consumer.handleCheckoutRequested(eventJson, "checkout-123"));
+
+        verify(valueOps).set(eq("checkout:checkout-123"), anyString(), any(Duration.class));
+    }
+
+    @Test
     void handleCheckoutRequested_soldOut_writesFailedWithoutRethrowing() throws Exception {
         when(idempotencyGuard.isAlreadyProcessed(any(), any())).thenReturn(false);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
@@ -111,9 +130,12 @@ class CheckoutRequestedConsumerTest {
                 .hasMessageContaining("DB unavailable");
     }
 
+    // ── handleDlt ─────────────────────────────────────────────────────────────
+
     @Test
-    void handleDlt_writesFailedStatusToRedis() throws Exception {
+    void handleDlt_writesFailedWhenNoExistingStatus() throws Exception {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("checkout:checkout-123")).thenReturn(null);
 
         consumer.handleDlt(eventJson, KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC + ".DLT");
 
@@ -123,5 +145,18 @@ class CheckoutRequestedConsumerTest {
         CheckoutStatusResponse saved = objectMapper.readValue(jsonCaptor.getValue(), CheckoutStatusResponse.class);
         assertThat(saved.getStatus()).isEqualTo("FAILED");
         assertThat(saved.getFailureReason()).contains("exhausted");
+    }
+
+    @Test
+    void handleDlt_doesNotOverwriteSuccessStatus() throws Exception {
+        // Guards the edge case: dedup Redis write failed after a successful checkout,
+        // causing a retry chain that reaches DLT. Must NOT overwrite the SUCCESS status.
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        String successJson = "{\"checkoutId\":\"checkout-123\",\"status\":\"SUCCESS\",\"orderId\":99,\"failureReason\":null}";
+        when(valueOps.get("checkout:checkout-123")).thenReturn(successJson);
+
+        consumer.handleDlt(eventJson, KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC + ".DLT");
+
+        verify(valueOps, never()).set(eq("checkout:checkout-123"), anyString(), any(Duration.class));
     }
 }

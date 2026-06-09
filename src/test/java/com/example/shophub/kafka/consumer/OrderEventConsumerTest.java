@@ -3,6 +3,7 @@ package com.example.shophub.kafka.consumer;
 import com.example.shophub.config.KafkaTopicConfig;
 import com.example.shophub.document.OrderActivityLog;
 import com.example.shophub.kafka.event.OrderCreatedEvent;
+import com.example.shophub.kafka.event.PaymentCompletedEvent;
 import com.example.shophub.repository.mongo.OrderActivityLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -77,5 +78,45 @@ class OrderEventConsumerTest {
         assertThatThrownBy(() -> consumer.handleOrderCreated(message, "42"))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("Mongo down");
+    }
+
+    // ── handlePaymentCompleted ────────────────────────────────────────────────
+
+    @Test
+    void handlePaymentCompleted_skipsWhenAlreadyProcessed() throws Exception {
+        PaymentCompletedEvent event = new PaymentCompletedEvent(42L, 1L, LocalDateTime.now());
+        String message = objectMapper.writeValueAsString(event);
+
+        when(idempotencyGuard.isAlreadyProcessed(KafkaTopicConfig.PAYMENT_COMPLETED_TOPIC, "42"))
+                .thenReturn(true);
+
+        consumer.handlePaymentCompleted(message, "42");
+
+        verifyNoInteractions(activityLogRepository);
+    }
+
+    @Test
+    void handlePaymentCompleted_newMessage_savesActivityLogAndMarksProcessed() throws Exception {
+        PaymentCompletedEvent event = new PaymentCompletedEvent(42L, 1L, LocalDateTime.now());
+        String message = objectMapper.writeValueAsString(event);
+
+        when(idempotencyGuard.isAlreadyProcessed(KafkaTopicConfig.PAYMENT_COMPLETED_TOPIC, "42"))
+                .thenReturn(false);
+
+        consumer.handlePaymentCompleted(message, "42");
+
+        ArgumentCaptor<OrderActivityLog> captor = ArgumentCaptor.forClass(OrderActivityLog.class);
+        verify(activityLogRepository).save(captor.capture());
+        assertThat(captor.getValue().getEvent()).isEqualTo("PAYMENT_COMPLETED");
+        assertThat(captor.getValue().getOrderId()).isEqualTo(42L);
+        verify(idempotencyGuard).markProcessed(KafkaTopicConfig.PAYMENT_COMPLETED_TOPIC, "42");
+    }
+
+    // ── handleDlt ─────────────────────────────────────────────────────────────
+
+    @Test
+    void handleDlt_doesNotInteractWithMongo() {
+        consumer.handleDlt("some-message", KafkaTopicConfig.ORDER_CREATED_TOPIC + ".dlt");
+        verifyNoInteractions(activityLogRepository);
     }
 }

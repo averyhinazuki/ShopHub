@@ -37,6 +37,7 @@ jmeter/
 tokens.csv
 images/
 description.txt
+resume.html
 *.jtl
 *.log
 postman/

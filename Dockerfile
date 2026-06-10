@@ -1,6 +1,6 @@
 # ── Stage 1: build ────────────────────────────────────────────────────────────
 # Full Maven + JDK image. We use it to compile and package, then throw it away.
-FROM maven:3.9-eclipse-temurin-19 AS build
+FROM maven:3.9-eclipse-temurin-21 AS build
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ RUN mvn package -DskipTests -q
 
 # ── Stage 2: run ──────────────────────────────────────────────────────────────
 # Minimal JRE image — no compiler, no Maven, no source code.
-FROM eclipse-temurin:19-jre
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 

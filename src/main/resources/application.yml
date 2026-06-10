@@ -15,21 +15,22 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate   # schema is owned by Flyway migrations, Hibernate only verifies it
     show-sql: false
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect
 
-  # MongoDB
+  # Flyway — versioned migrations in classpath:db/migration.
+  # baseline-on-migrate: pre-Flyway databases (tables exist, no history table)
+  # are baselined at V1 instead of failing; fresh databases run V1__init.sql.
+  flyway:
+    baseline-on-migrate: true
+
+  # MongoDB + Redis
   data:
     mongodb:
       uri: mongodb://localhost:27017/flash_sale_logs
-
-  # Redis
-  redis:
-    host: localhost
-    port: 6379
+    redis:
+      host: localhost
+      port: 6379
 
   # Kafka
   kafka:
@@ -54,20 +55,23 @@ spring:
       max-file-size: 5MB
       max-request-size: 5MB
 
-# JWT config (custom — not a Spring key)
+# App config (custom keys — not Spring's)
+# Secrets come from environment variables; defaults below are for local dev only.
 app:
   jwt:
-    secret: your-256-bit-secret-key-replace-this-in-production-please
+    secret: ${JWT_SECRET:local-dev-only-256-bit-secret-key-do-not-use-in-production}
     access-expiration-ms: 300000     # 5 minutes
     refresh-expiration-ms: 86400000  # 1 day
   order:
     pending-timeout-minutes: 15
     expiry-job-interval-seconds: 60
     expiry-job-batch-size: 100
+  checkout:
+    status-ttl-minutes: 30
   cloudinary:
-    cloud-name: dlxamalb1
-    api-key: 559889381252938
-    api-secret: d_DIsfQy7RV9a1ewI_5WJY5BEEI
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+    api-key: ${CLOUDINARY_API_KEY:}
+    api-secret: ${CLOUDINARY_API_SECRET:}
 
 server:
   port: 8080

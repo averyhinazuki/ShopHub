@@ -1,22 +1,15 @@
 package com.example.shophub.controller;
 
 import com.example.shophub.dto.OrderResponse;
+import com.example.shophub.dto.order.CheckoutStatusResponse;
 import com.example.shophub.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * Step 7 : POST /api/orders/checkout   (sequential deduction, no lock)
- *          GET  /api/orders/me         (paginated; already existed as stub)
- *          GET  /api/orders/{id}       (owner-only; ADMIN can read any)
- *          POST /api/orders/{id}/pay   (conditional UPDATE race guard)
- * Step 8 : + Redisson lock + cache-aside in checkout
- * Step 11: GET  /api/orders            [ADMIN] all orders (paginated)
- *          + OrderExpiryScheduler (separate class)
- */
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
@@ -24,10 +17,20 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    /** POST /api/orders/checkout — convert cart to a PENDING order */
+    /**
+     * POST /api/orders/checkout — accepts checkout asynchronously.
+     * Returns 202 Accepted with { checkoutId, status: PENDING }.
+     * Client polls GET /api/orders/checkout-status/{checkoutId} for the result.
+     */
     @PostMapping("/checkout")
-    public ResponseEntity<OrderResponse> checkout() {
-        return ResponseEntity.ok(orderService.checkout());
+    public ResponseEntity<CheckoutStatusResponse> checkout() {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(orderService.initiateCheckout());
+    }
+
+    /** GET /api/orders/checkout-status/{checkoutId} — polls async checkout result */
+    @GetMapping("/checkout-status/{checkoutId}")
+    public ResponseEntity<CheckoutStatusResponse> checkoutStatus(@PathVariable String checkoutId) {
+        return ResponseEntity.ok(orderService.getCheckoutStatus(checkoutId));
     }
 
     /** GET /api/orders/me — caller's own orders (paginated) */

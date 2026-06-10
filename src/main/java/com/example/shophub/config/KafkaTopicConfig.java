@@ -8,8 +8,9 @@ import org.springframework.kafka.config.TopicBuilder;
 @Configuration
 public class KafkaTopicConfig {
 
-    public static final String ORDER_CREATED_TOPIC     = "order-created";
-    public static final String PAYMENT_COMPLETED_TOPIC = "payment-completed";
+    public static final String ORDER_CREATED_TOPIC      = "order-created";
+    public static final String PAYMENT_COMPLETED_TOPIC  = "payment-completed";
+    public static final String CHECKOUT_REQUESTED_TOPIC = "checkout-requested";
 
     /**
      * Declares the order-created topic.
@@ -30,6 +31,14 @@ public class KafkaTopicConfig {
     @Bean
     public NewTopic paymentCompletedTopic() {
         return TopicBuilder.name(PAYMENT_COMPLETED_TOPIC)
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic checkoutRequestedTopic() {
+        return TopicBuilder.name(CHECKOUT_REQUESTED_TOPIC)
                 .partitions(3)
                 .replicas(1)
                 .build();

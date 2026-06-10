@@ -1,8 +1,13 @@
 package com.example.shophub.service;
 
+import com.example.shophub.dto.order.CheckoutStatusResponse;
 import com.example.shophub.entity.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.example.shophub.enums.ProductStatus;
 import com.example.shophub.exception.ResourceNotFoundException;
+import com.example.shophub.kafka.event.CheckoutRequestedEvent;
+import com.example.shophub.kafka.producer.OrderEventProducer;
 import com.example.shophub.repository.jpa.*;
 import com.example.shophub.security.SecurityUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -17,11 +22,14 @@ import org.mockito.quality.Strictness;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -35,24 +43,29 @@ import static org.mockito.Mockito.*;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class OrderServiceTest {
 
-    @Mock OrderRepository            orderRepository;
-    @Mock OrderItemRepository        orderItemRepository;
-    @Mock CartRepository             cartRepository;
-    @Mock CartItemRepository         cartItemRepository;
-    @Mock ProductInventoryRepository inventoryRepository;
-    @Mock ProductRepository          productRepository;
-    @Mock ApplicationEventPublisher  eventPublisher;
-    @Mock RedissonClient             redissonClient;
-    @Mock ProductCacheService        cacheService;
-    @Mock SecurityUtils              securityUtils;
-    @Mock RLock                      lock;
+    @Mock OrderRepository                        orderRepository;
+    @Mock OrderItemRepository                    orderItemRepository;
+    @Mock CartRepository                         cartRepository;
+    @Mock CartItemRepository                     cartItemRepository;
+    @Mock ProductInventoryRepository             inventoryRepository;
+    @Mock ProductRepository                      productRepository;
+    @Mock ApplicationEventPublisher              eventPublisher;
+    @Mock RedissonClient                         redissonClient;
+    @Mock ProductCacheService                    cacheService;
+    @Mock SecurityUtils                          securityUtils;
+    @Mock RLock                                  lock;
+    @Mock StringRedisTemplate                    redisTemplate;
+    @Mock ValueOperations<String, String>        valueOps;
+    @Mock OrderEventProducer                     kafkaProducer;
 
     @InjectMocks OrderService orderService;
 
     @BeforeEach
     void setUp() {
-        // Inject the real instance as self so internal @Transactional calls run directly
         ReflectionTestUtils.setField(orderService, "self", orderService);
+        ReflectionTestUtils.setField(orderService, "checkoutStatusTtlMinutes", 30);
+        ReflectionTestUtils.setField(orderService, "objectMapper",
+                new ObjectMapper().registerModule(new JavaTimeModule()));
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("testuser", null, List.of()));
         when(securityUtils.resolveUserId()).thenReturn(1L);
@@ -154,7 +167,7 @@ class OrderServiceTest {
     // ── checkout ──────────────────────────────────────────────────────────────
 
     @Test
-    void checkout_lockTimeout_throwsRuntimeException_noCompensation() throws Exception {
+    void processCheckout_lockTimeout_throwsRuntimeException_noCompensation() throws Exception {
         doReturn(false).when(lock).tryLock(anyLong(), anyLong(), any(TimeUnit.class));
 
         Cart c = cart();
@@ -162,7 +175,7 @@ class OrderServiceTest {
         when(cartRepository.findByUserId(1L)).thenReturn(Optional.of(c));
         when(cartItemRepository.findByCartId(1L)).thenReturn(List.of(cartItem(c, p, 2)));
 
-        assertThatThrownBy(() -> orderService.checkout())
+        assertThatThrownBy(() -> orderService.processCheckout(1L))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("Could not acquire lock");
 
@@ -171,7 +184,7 @@ class OrderServiceTest {
     }
 
     @Test
-    void checkout_secondItemSoldOut_throwsSoldOutException_andCompensatesFirst() throws Exception {
+    void processCheckout_secondItemSoldOut_throwsSoldOutException_andCompensatesFirst() throws Exception {
         doReturn(true).when(lock).tryLock(anyLong(), anyLong(), any(TimeUnit.class));
 
         Cart c = cart();
@@ -184,7 +197,7 @@ class OrderServiceTest {
         when(inventoryRepository.deductStock(10L, 2)).thenReturn(1); // p1 succeeds
         when(inventoryRepository.deductStock(20L, 1)).thenReturn(0); // p2 sold out
 
-        assertThatThrownBy(() -> orderService.checkout())
+        assertThatThrownBy(() -> orderService.processCheckout(1L))
                 .isInstanceOf(com.example.shophub.exception.SoldOutException.class);
 
         // p1's deduction must be compensated; p2 was never deducted
@@ -194,7 +207,7 @@ class OrderServiceTest {
     }
 
     @Test
-    void checkout_persistOrderFails_compensatesAllDeductions() throws Exception {
+    void processCheckout_persistOrderFails_compensatesAllDeductions() throws Exception {
         doReturn(true).when(lock).tryLock(anyLong(), anyLong(), any(TimeUnit.class));
 
         Cart c = cart();
@@ -208,7 +221,7 @@ class OrderServiceTest {
         // persistOrder fails at order save — both deductions have already been committed
         when(orderRepository.save(any())).thenThrow(new RuntimeException("DB error"));
 
-        assertThatThrownBy(() -> orderService.checkout())
+        assertThatThrownBy(() -> orderService.processCheckout(1L))
                 .isInstanceOf(RuntimeException.class);
 
         // Both deductions must be compensated
@@ -217,7 +230,7 @@ class OrderServiceTest {
     }
 
     @Test
-    void checkout_success_returnsOrderResponse() throws Exception {
+    void processCheckout_success_returnsOrderResponse() throws Exception {
         doReturn(true).when(lock).tryLock(anyLong(), anyLong(), any(TimeUnit.class));
 
         Cart c = cart();
@@ -232,7 +245,7 @@ class OrderServiceTest {
         when(productRepository.getReferenceById(10L)).thenReturn(p);
         when(orderItemRepository.findByOrderId(100L)).thenReturn(singleOrderItem(p));
 
-        com.example.shophub.dto.OrderResponse response = orderService.checkout();
+        com.example.shophub.dto.OrderResponse response = orderService.processCheckout(1L);
 
         assertThat(response).isNotNull();
         assertThat(response.getId()).isEqualTo(100L);
@@ -288,5 +301,60 @@ class OrderServiceTest {
 
         // payIfPending must NOT be called — we should have rejected before reaching it
         verify(orderRepository, never()).payIfPending(anyLong(), any());
+    }
+
+    // ── initiateCheckout ──────────────────────────────────────────────────────
+
+    @Test
+    void initiateCheckout_emptyCart_throwsIllegalArgument() {
+        Cart c = cart();
+        when(cartRepository.findByUserId(1L)).thenReturn(Optional.of(c));
+        when(cartItemRepository.findByCartId(c.getId())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> orderService.initiateCheckout())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cart is empty");
+    }
+
+    @Test
+    void initiateCheckout_nonEmptyCart_publishesEventAndReturnsPending() {
+        Cart c = cart();
+        Product p = activeProduct(1L);
+        CartItem ci = cartItem(c, p, 2);
+        when(cartRepository.findByUserId(1L)).thenReturn(Optional.of(c));
+        when(cartItemRepository.findByCartId(c.getId())).thenReturn(List.of(ci));
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+
+        CheckoutStatusResponse result = orderService.initiateCheckout();
+
+        assertThat(result.getStatus()).isEqualTo("PENDING");
+        assertThat(result.getCheckoutId()).isNotBlank();
+        verify(kafkaProducer).sendCheckoutRequestedEvent(any(CheckoutRequestedEvent.class));
+        verify(valueOps).set(startsWith("checkout:"), anyString(), any(Duration.class));
+    }
+
+    // ── getCheckoutStatus ─────────────────────────────────────────────────────
+
+    @Test
+    void getCheckoutStatus_keyAbsent_returnsPending() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("checkout:unknown")).thenReturn(null);
+
+        CheckoutStatusResponse result = orderService.getCheckoutStatus("unknown");
+
+        assertThat(result.getStatus()).isEqualTo("PENDING");
+        assertThat(result.getCheckoutId()).isEqualTo("unknown");
+    }
+
+    @Test
+    void getCheckoutStatus_successEntry_returnsDeserializedResponse() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("checkout:abc")).thenReturn(
+                "{\"checkoutId\":\"abc\",\"status\":\"SUCCESS\",\"orderId\":99,\"failureReason\":null}");
+
+        CheckoutStatusResponse result = orderService.getCheckoutStatus("abc");
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        assertThat(result.getOrderId()).isEqualTo(99L);
     }
 }

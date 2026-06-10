@@ -15,8 +15,14 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate   # schema is owned by Flyway migrations, Hibernate only verifies it
     show-sql: false
+
+  # Flyway — versioned migrations in classpath:db/migration.
+  # baseline-on-migrate: pre-Flyway databases (tables exist, no history table)
+  # are baselined at V1 instead of failing; fresh databases run V1__init.sql.
+  flyway:
+    baseline-on-migrate: true
 
   # MongoDB + Redis
   data:

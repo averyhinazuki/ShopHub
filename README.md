@@ -10,7 +10,7 @@ A full-stack online shopping platform engineered for high-concurrency checkout u
 | :--- | :--- |
 | Backend | Java 21 · Spring Boot 3 · Spring Security |
 | Frontend | Vue 3 · Vite · Tailwind CSS |
-| Primary DB | MySQL 8 (JPA/Hibernate) |
+| Primary DB | MySQL 8 (JPA/Hibernate · Flyway migrations) |
 | Cache | Redis (Redisson distributed locks) |
 | Message Broker | Apache Kafka |
 | Audit Logs | MongoDB |
@@ -146,7 +146,7 @@ The test uses pre-authenticated requests and asserts `availableStock = 0` at tea
 docker compose up -d
 ```
 
-Starts MySQL, Redis, MongoDB, and Kafka (KRaft mode — no Zookeeper). Spring Boot auto-creates all tables on first run via `ddl-auto: update`.
+Starts MySQL, Redis, MongoDB, and Kafka (KRaft mode — no Zookeeper). On first run, Flyway creates the schema from versioned migrations (`db/migration`); Hibernate runs with `ddl-auto: validate` and only verifies that entities match.
 
 **2. Run the app**
 

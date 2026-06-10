@@ -1,6 +1,6 @@
 # ShopHub
 
-A full-stack online shopping platform engineered for high-concurrency checkout under contention. Focuses on correctness when many users race for limited stock — distributed locking, cache-aside with double-deletion, lock-free order expiry, and a publish-after-commit event pipeline.
+A full-stack online shopping platform engineered for high-concurrency checkout under contention. Focuses on correctness when many users race for limited stock — Kafka-buffered async checkout, distributed locking, idempotent consumers with dead-letter retry, cache-aside with double-deletion, lock-free order expiry, and a publish-after-commit event pipeline.
 
 ---
 
@@ -8,7 +8,7 @@ A full-stack online shopping platform engineered for high-concurrency checkout u
 
 | Layer | Technology |
 | :--- | :--- |
-| Backend | Java 19 · Spring Boot 3 · Spring Security |
+| Backend | Java 21 · Spring Boot 3 · Spring Security |
 | Frontend | Vue 3 · Vite · Tailwind CSS |
 | Primary DB | MySQL 8 (JPA/Hibernate) |
 | Cache | Redis (Redisson distributed locks) |
@@ -20,6 +20,31 @@ A full-stack online shopping platform engineered for high-concurrency checkout u
 ---
 
 ## Architecture Highlights
+
+### Async Checkout — Kafka as a Load Buffer
+
+A flash sale turns checkout into a thundering herd: thousands of requests hit the same SKU in the same second, and each one wants a row lock. Instead of letting that spike land on MySQL directly, `POST /checkout` does no database work at all — it publishes a `checkout-requested` event to Kafka and immediately returns **202 Accepted** with a `checkoutId`:
+
+```
+POST /checkout  →  202 { checkoutId, status: PENDING }
+                          │
+                          ▼  client polls
+GET /checkout-status/{checkoutId}  →  { status: SUCCESS, orderId } | { status: FAILED, failureReason }
+```
+
+A consumer drains the topic at a sustainable rate and runs the real checkout (lock → deduct → persist), writing the outcome to Redis (30-minute TTL) for the client to poll. The web tier absorbs the spike at Kafka-append speed; MySQL sees a steady stream instead of 10k concurrent lock acquisitions.
+
+### Idempotent Consumers
+
+Kafka guarantees **at-least-once** delivery — a consumer crash after processing but before the offset commit means redelivery. Every consumer therefore checks a Redis dedup key (`kafka:processed:{topic}:{key}`, 24h TTL) before processing and marks it after. A redelivered `checkout-requested` event is skipped instead of charging the user twice.
+
+### Retry with Backoff + Dead Letter Topics
+
+Failures are classified, not swallowed:
+
+- **Terminal failures** (sold out) — no retry; the consumer writes `FAILED` to Redis immediately so the client gets a fast answer.
+- **Transient failures** (DB down, lock timeout) — `@RetryableTopic` retries up to 3 times with exponential backoff (1s → 2s → 4s) on dedicated retry topics, so a poison message never blocks the main partition.
+- **Exhausted retries** — the message lands on a dead letter topic; the `@DltHandler` writes `FAILED` to Redis (guarding against overwriting an already-recorded `SUCCESS`) so the user is never left polling forever, and the DLT retains the message for manual inspection.
 
 ### Inventory Under Contention
 
@@ -49,7 +74,7 @@ If `/pay` wins first, `rowsAffected = 0` and the scheduler skips — stock stays
 
 ### Event-Driven Order Flow
 
-Order creation and payment completion publish domain events to **Kafka** (`order-created`, `payment-completed` topics) using a **publish-after-commit** pattern — events fire only after the DB transaction succeeds, preventing phantom emissions on rollback. Consumers handle downstream processing asynchronously, decoupling the write path from side effects.
+Order creation and payment completion publish domain events to **Kafka** (`order-created`, `payment-completed` topics) using a **publish-after-commit** pattern — events fire only after the DB transaction succeeds, preventing phantom emissions on rollback. Consumers handle downstream processing asynchronously (with the same idempotency + DLT protections as checkout), decoupling the write path from side effects.
 
 **Acknowledged gap:** `AFTER_COMMIT` is not a full delivery guarantee. A JVM crash in the window between DB commit and the Kafka send permanently loses the event. The complete solution is the transactional outbox pattern (write the event as a DB row in the same transaction, then poll and publish). This is intentionally out of scope for this build.
 
@@ -74,24 +99,18 @@ Both MongoDB write paths are **best-effort**: exceptions are caught and swallowe
 
 Verified end-to-end with JMeter (see `jmeter/checkout-preauth-latency-test.jmx`).
 
-**5000 concurrent pre-authenticated checkouts against a 10-unit SKU:**
+**5000 concurrent pre-authenticated checkouts against a 10-unit SKU** (measured against the earlier synchronous checkout endpoint — the oversell invariant is enforced by the same lock + conditional-UPDATE path the async consumer now runs):
 
 | Metric | Result |
 | :--- | :--- |
 | Successful checkouts | **10** (exactly the stock limit) |
-| Graceful 409 rejections | 4990 |
+| Graceful sold-out rejections | 4990 |
 | Oversells | **0** |
 | Connection failures | 0 |
 | Successful checkout latency | 84 – 422 ms (median ~280 ms) |
 | Total test duration | 30.9 s |
 
-Reproduce with:
-
-```bash
-jmeter -n -t jmeter/checkout-preauth-latency-test.jmx -l results.jtl -e -o report/
-```
-
-The test uses pre-authenticated requests and asserts `availableStock = 0` at teardown — any oversell fails loudly.
+The test uses pre-authenticated requests and asserts `availableStock = 0` at teardown — any oversell fails loudly. Since the move to Kafka-buffered checkout, `POST /checkout` itself returns in single-digit milliseconds (it only appends to Kafka); end-to-end latency is dominated by consumer throughput and observed via status polling.
 
 ---
 
@@ -111,7 +130,7 @@ The test uses pre-authenticated requests and asserts `availableStock = 0` at tea
 **Infrastructure**
 - Stateless REST API (JWT, no sessions)
 - Redis-backed distributed locks via Redisson
-- Kafka async event pipeline
+- Kafka async event pipeline with idempotent consumers, retry topics, and DLTs
 - Scheduled order expiry with batch processing
 - MongoDB audit trail
 
@@ -119,7 +138,7 @@ The test uses pre-authenticated requests and asserts `availableStock = 0` at tea
 
 ## Running Locally
 
-**Prerequisites:** Java 19, Node 18+, Docker
+**Prerequisites:** Java 21, Node 18+, Docker
 
 **1. Start infrastructure**
 
@@ -127,7 +146,7 @@ The test uses pre-authenticated requests and asserts `availableStock = 0` at tea
 docker compose up -d
 ```
 
-Starts MySQL, Redis, MongoDB, Kafka, and Zookeeper. Spring Boot auto-creates all tables on first run via `ddl-auto: update`.
+Starts MySQL, Redis, MongoDB, and Kafka (KRaft mode — no Zookeeper). Spring Boot auto-creates all tables on first run via `ddl-auto: update`.
 
 **2. Run the app**
 
@@ -141,22 +160,13 @@ npm install
 npm run dev
 ```
 
-**3. Configure credentials** in `src/main/resources/application.yml`:
+**3. Configure secrets** via environment variables (`application.yml` ships with dev-only defaults and no real credentials):
 
-```yaml
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/flash_sale_db
-    username: root
-    password: yourpassword
-
-app:
-  jwt:
-    secret: your-256-bit-secret
-  cloudinary:
-    cloud-name: your-cloud-name
-    api-key: your-api-key
-    api-secret: your-api-secret
+```bash
+JWT_SECRET=your-256-bit-secret           # optional locally — a dev default is built in
+CLOUDINARY_CLOUD_NAME=your-cloud-name    # required only for image upload
+CLOUDINARY_API_KEY=your-api-key
+CLOUDINARY_API_SECRET=your-api-secret
 ```
 
 **4. Seed an admin user** — register via the API, then:
@@ -187,7 +197,8 @@ UPDATE users SET role = 'ADMIN' WHERE username = 'your-username';
 | POST | `/api/cart/items` | User | Add / increment item |
 | PUT | `/api/cart/items/{id}` | User | Set item quantity |
 | DELETE | `/api/cart/items/{id}` | User | Remove item |
-| POST | `/api/orders/checkout` | User | Checkout cart (hot path) |
+| POST | `/api/orders/checkout` | User | Initiate async checkout — 202 + `checkoutId` |
+| GET | `/api/orders/checkout-status/{checkoutId}` | User | Poll async checkout result |
 | GET | `/api/orders/me` | User | My orders (paginated) |
 | GET | `/api/orders/{id}` | User/Admin | Order detail |
 | POST | `/api/orders/{id}/pay` | User/Admin | Mock payment |

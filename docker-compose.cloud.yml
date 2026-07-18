@@ -4,27 +4,25 @@
 # What's DIFFERENT from docker-compose.yml:
 #   - app image comes from GHCR (`image:`, not `build:`) — the instance never
 #     runs a Maven build, it just pulls what CI already published.
-#   - Kafka and MongoDB are DROPPED. They are not hard startup dependencies:
-#       * MySQL is hard-required — Flyway + Hibernate `ddl-auto: validate`
-#         run against it during context refresh, so the app fails to boot
-#         without a reachable MySQL.
-#       * Redis is hard-required — RedissonConfig calls Redisson.create()
-#         eagerly as a @Bean, which opens a connection at startup; unreachable
-#         Redis fails the boot the same way.
-#       * Kafka is soft — the @KafkaListener consumers
-#         (CheckoutRequestedConsumer, OrderEventConsumer) start listener
-#         containers that retry/back off in the background if the broker is
-#         unreachable; they do not block application startup.
-#       * MongoDB is soft — Spring Data MongoDB's client connects lazily, so
-#         UserActionLog/OrderActivityLog writes will fail at call time (logged
-#         errors, no crash) rather than blocking boot.
-#     Net effect: the app comes up and serves the flash-sale/checkout path
-#     fully; only the async order-event stream and Mongo activity logging are
-#     degraded until a later step re-adds Kafka/Mongo on a bigger instance.
+#   - Kafka and MongoDB are INCLUDED (the first deploy trimmed them, which
+#     broke checkout: OrderService.initiateCheckout() only publishes a
+#     CheckoutRequestedEvent and returns 202 Accepted — the actual stock
+#     deduction and order creation happen in CheckoutRequestedConsumer, a
+#     Kafka listener. No broker = every checkout stuck PENDING forever.)
+#     Kafka runs single-node in KRaft mode (Kafka 3.x is its own controller,
+#     no ZooKeeper) with replication factor 1 — fine for one box, the
+#     opposite of a production cluster.
+#   - Middleware ports are NOT published to the host, unlike the dev compose
+#     file: containers reach each other by service name on the internal
+#     network, and an internet-facing box should expose nothing it doesn't
+#     have to (defense in depth behind the security group).
 #   - nginx is added in front, serving the built frontend and reverse-proxying
 #     /api to the app (see infra/nginx/nginx.conf).
-#   - Memory is capped everywhere on purpose — t3.small is 2 GiB total and
-#     three JVM-and-friends processes plus nginx have to share it.
+#   - Memory is capped everywhere on purpose. Sized for a 4 GiB instance
+#     (c7i-flex.large): app ~700M + MySQL ~500M + Kafka ~400M + Mongo ~350M
+#     + Redis ~150M + nginx, leaving headroom for the OS and page cache.
+#     Does NOT fit in a t3.small — keep instance_type in terraform.tfvars in
+#     sync with this file.
 #
 # Secrets (MYSQL_ROOT_PASSWORD, JWT_SECRET) are NOT hardcoded here — they are
 # read from a .env file placed next to this compose file at deploy time by
@@ -44,16 +42,22 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/flash_sale_logs
       JWT_SECRET: ${JWT_SECRET}
       # Cap the JVM heap explicitly instead of letting it default to 25% of
-      # container memory (fine on a normal host, too generous once MySQL and
-      # Redis are also fighting for RAM on a 2 GiB box).
+      # container memory (fine on a normal host, too generous with five
+      # other processes sharing a 4 GiB box).
       JAVA_TOOL_OPTIONS: "-Xmx512m"
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_started   # Kafka has no simple health-check command
 
   mysql:
     image: mysql:8
@@ -84,6 +88,46 @@ services:
       timeout: 5s
       retries: 5
 
+  # Lifted from the dev compose file (a proven-working single-node KRaft
+  # config), with three deploy-environment changes: no published port, a
+  # restart policy, and a capped heap. One deliberate fix: the controller
+  # quorum voter address uses the service name instead of dev's `localhost`
+  # (same effect single-node, but correct if this ever splits into
+  # broker+controller containers).
+  kafka:
+    image: apache/kafka:3.7.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Kafka's default 1 GiB heap is cluster-sized; a single-node broker
+      # moving this app's event volume is comfortable in a quarter of that.
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
+    # No volume: in-flight events are transient by design here — MySQL is
+    # the source of truth, and a broker restart losing queued checkout
+    # events is acceptable on a learning box.
+
+  mongodb:
+    image: mongo:6
+    restart: unless-stopped
+    # WiredTiger's default cache is ~50% of RAM — fine on a dedicated DB
+    # host, greedy here. 0.25 GiB is plenty for activity logs.
+    command: --wiredTigerCacheSizeGB 0.25
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mongo_data:/data/db
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -97,3 +141,4 @@ services:
 
 volumes:
   mysql_data:
+  mongo_data:

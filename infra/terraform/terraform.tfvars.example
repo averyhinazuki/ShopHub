@@ -1,0 +1,17 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored (see .gitignore) — never commit it, it will
+# contain a password. This .example file is the only tfvars-shaped file
+# meant to be tracked in git.
+
+aws_region       = "us-east-1"
+ssh_allowed_cidr = "REPLACE_WITH_YOUR_IP/32" # run: curl ifconfig.me
+instance_type    = "t3.small"
+key_pair_name    = "shophub-key"
+public_key_path  = "~/shophub-key.pub" # see variables.tf for how to derive this from the .pem
+
+app_image     = "ghcr.io/averyhinazuki/shophub:latest"
+ghcr_username = ""
+ghcr_token    = "" # leave blank if the GHCR package is public
+
+mysql_root_password = "REPLACE_WITH_A_REAL_PASSWORD"
+jwt_secret           = "REPLACE_WITH_OUTPUT_OF: openssl rand -base64 48"

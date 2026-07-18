@@ -1,0 +1,99 @@
+# Trimmed compose stack for the first cloud deploy (Terraform Step 1, see
+# docs/DEVOPS_ROADMAP.md and docs/DEPLOY.md).
+#
+# What's DIFFERENT from docker-compose.yml:
+#   - app image comes from GHCR (`image:`, not `build:`) — the instance never
+#     runs a Maven build, it just pulls what CI already published.
+#   - Kafka and MongoDB are DROPPED. They are not hard startup dependencies:
+#       * MySQL is hard-required — Flyway + Hibernate `ddl-auto: validate`
+#         run against it during context refresh, so the app fails to boot
+#         without a reachable MySQL.
+#       * Redis is hard-required — RedissonConfig calls Redisson.create()
+#         eagerly as a @Bean, which opens a connection at startup; unreachable
+#         Redis fails the boot the same way.
+#       * Kafka is soft — the @KafkaListener consumers
+#         (CheckoutRequestedConsumer, OrderEventConsumer) start listener
+#         containers that retry/back off in the background if the broker is
+#         unreachable; they do not block application startup.
+#       * MongoDB is soft — Spring Data MongoDB's client connects lazily, so
+#         UserActionLog/OrderActivityLog writes will fail at call time (logged
+#         errors, no crash) rather than blocking boot.
+#     Net effect: the app comes up and serves the flash-sale/checkout path
+#     fully; only the async order-event stream and Mongo activity logging are
+#     degraded until a later step re-adds Kafka/Mongo on a bigger instance.
+#   - nginx is added in front, serving the built frontend and reverse-proxying
+#     /api to the app (see infra/nginx/nginx.conf).
+#   - Memory is capped everywhere on purpose — t3.small is 2 GiB total and
+#     three JVM-and-friends processes plus nginx have to share it.
+#
+# Secrets (MYSQL_ROOT_PASSWORD, JWT_SECRET) are NOT hardcoded here — they are
+# read from a .env file placed next to this compose file at deploy time by
+# Terraform's user-data script (infra/terraform/user_data.sh.tpl), sourced
+# from terraform.tfvars. That keeps them out of this file (which is tracked
+# in git) — see the "Secrets management" gap in docs/DEVOPS_ROADMAP.md.
+
+services:
+
+  app:
+    image: ${APP_IMAGE:-ghcr.io/averyhinazuki/shophub:latest}
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/flash_sale_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      JWT_SECRET: ${JWT_SECRET}
+      # Cap the JVM heap explicitly instead of letting it default to 25% of
+      # container memory (fine on a normal host, too generous once MySQL and
+      # Redis are also fighting for RAM on a 2 GiB box).
+      JAVA_TOOL_OPTIONS: "-Xmx512m"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: flash_sale_db
+    # innodb-buffer-pool-size defaults to 128MB anyway on modest hosts, but
+    # setting it explicitly documents the budget instead of leaving it to
+    # MySQL's auto-sizing heuristics.
+    command: --innodb-buffer-pool-size=128M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    # Small, bounded cache — this box isn't sized to let Redis grow unchecked.
+    command: --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - app
+
+volumes:
+  mysql_data:

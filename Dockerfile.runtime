@@ -1,0 +1,8 @@
+# Local load-test only: run a jar built on the HOST (where ~/.m2 is cached),
+# instead of recompiling inside Docker. Avoids the slow/stuck in-container
+# Maven dependency download. Pair with docker-compose.override.yml.
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY target/shop-hub-*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]

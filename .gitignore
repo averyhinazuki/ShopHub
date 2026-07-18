@@ -33,10 +33,20 @@ build/
 .vscode/
 
 ### Only push src, frontend, pom.xml, README ###
-jmeter/
+# jmeter/ test plans + setup.py ARE tracked so the load test migrates; only its
+# generated artifacts are ignored (tokens.csv, *.jtl, *.log — covered by rules below)
 tokens.csv
+
+# Personal interview-prep artifacts — keep out of the public repo
+INTERVIEW_PREP.html
+INTERVIEW_PREP.md
+render_interview.py
+
+# OS
+.DS_Store
 images/
 description.txt
+resume.html
 *.jtl
 *.log
 postman/

@@ -97,20 +97,34 @@ Both MongoDB write paths are **best-effort**: exceptions are caught and swallowe
 
 ## Concurrency Stress Test
 
-Verified end-to-end with JMeter (see `jmeter/checkout-preauth-latency-test.jmx`).
+Verified with JMeter against **5000 concurrent pre-authenticated checkouts on a 10-unit SKU** — first the synchronous design, then the async pipeline that replaced it. Both hold the oversell invariant (teardown asserts `availableStock = 0`; any oversell fails loudly).
 
-**5000 concurrent pre-authenticated checkouts against a 10-unit SKU** (measured against the earlier synchronous checkout endpoint — the oversell invariant is enforced by the same lock + conditional-UPDATE path the async consumer now runs):
+### Synchronous (`jmeter/checkout-preauth-latency-test.jmx` → `results-preauth.jtl`)
 
 | Metric | Result |
 | :--- | :--- |
 | Successful checkouts | **10** (exactly the stock limit) |
 | Graceful sold-out rejections | 4990 |
 | Oversells | **0** |
-| Connection failures | 0 |
-| Successful checkout latency | 84 – 422 ms (median ~280 ms) |
+| Successful-checkout latency | p50 280 ms (84 – 422 ms) |
+| All-requests latency | **p50 ~15.5 s** (max ~25.6 s) |
 | Total test duration | 30.9 s |
 
-The test uses pre-authenticated requests and asserts `availableStock = 0` at teardown — any oversell fails loudly. Since the move to Kafka-buffered checkout, `POST /checkout` itself returns in single-digit milliseconds (it only appends to Kafka); end-to-end latency is dominated by consumer throughput and observed via status polling.
+Correctness was perfect, but the 280 ms is only the 10 winners — the 4990 rejected requests queued a **p50 of ~15.5 s** on the per-product lock. That contention ceiling is what motivated the async redesign.
+
+### Async (`jmeter/checkout-async-latency-test.jmx` → `results-async.jtl`)
+
+`POST /checkout` does no DB work — it validates the cart, appends to Kafka, and returns 202.
+
+| Metric | Result |
+| :--- | :--- |
+| Checkout responses | **5000 × 202**, 0 errors |
+| 202 acknowledgment latency | **p50 4 ms**, p95 27 ms, p99 61 ms, max 104 ms |
+| Winning orders persisted (end-to-end) | **385 – 850 ms** (all 10 within <1 s of the burst) |
+| Full 5000-event backlog drained | ~10.6 s (single consumer, ≈470 jobs/s) |
+| Oversells | **0** (stock → 0, exactly 10 orders) |
+
+Median checkout acknowledgment dropped from ~15.5 s to **4 ms** while preserving zero oversells; the order is actually placed end-to-end in under a second, and the full backlog clears in ~10.6 s — a single-consumer throughput characteristic that scales out with partitions/concurrency.
 
 ---
 

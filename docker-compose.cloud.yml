@@ -17,7 +17,9 @@
 #     network, and an internet-facing box should expose nothing it doesn't
 #     have to (defense in depth behind the security group).
 #   - nginx is added in front, serving the built frontend and reverse-proxying
-#     /api to the app (see infra/nginx/nginx.conf).
+#     /api to the app. It runs from the shophub-frontend image built by CI
+#     (Dockerfile.frontend: nginx + dist + infra/nginx/nginx.conf baked in),
+#     so the frontend deploys by image pull — no manual scp of frontend/dist.
 #   - Memory is capped everywhere on purpose. Sized for a 4 GiB instance
 #     (c7i-flex.large): app ~700M + MySQL ~500M + Kafka ~400M + Mongo ~350M
 #     + Redis ~150M + nginx, leaving headroom for the OS and page cache.
@@ -128,14 +130,15 @@ services:
     volumes:
       - mongo_data:/data/db
 
+  # The frontend image (see Dockerfile.frontend) is nginx with the built
+  # frontend AND nginx.conf baked in — pulled from GHCR like the app image,
+  # instead of bind-mounting files that had to be scp'd to the host first.
+  # Changing nginx.conf now means a CI rebuild, not an edit on the box.
   nginx:
-    image: nginx:1.27-alpine
+    image: ${FRONTEND_IMAGE:-ghcr.io/averyhinazuki/shophub-frontend:latest}
     restart: unless-stopped
     ports:
       - "80:80"
-    volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:
       - app
 

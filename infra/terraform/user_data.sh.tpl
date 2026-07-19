@@ -35,18 +35,16 @@ usermod -aG docker ec2-user
 mkdir -p /opt/shophub
 cd /opt/shophub
 
-# docker-compose.cloud.yml and nginx.conf are embedded at `terraform apply`
-# time via templatefile(..., { docker_compose_content = file(...) }) in
-# main.tf, so the instance doesn't need git/network access to this repo to
-# stand up the stack — it just needs to reach GHCR and the OS package repos.
+# docker-compose.cloud.yml is embedded at `terraform apply` time via
+# templatefile(..., { docker_compose_content = file(...) }) in main.tf, so the
+# instance doesn't need git/network access to this repo to stand up the stack
+# — it just needs to reach GHCR and the OS package repos. (nginx.conf and the
+# built frontend are no longer written here at all: they're baked into the
+# shophub-frontend image by CI — see Dockerfile.frontend — and arrive via
+# `docker compose pull` like the app image.)
 cat > docker-compose.cloud.yml <<'COMPOSE_EOF'
 ${docker_compose_content}
 COMPOSE_EOF
-
-mkdir -p infra/nginx
-cat > infra/nginx/nginx.conf <<'NGINX_EOF'
-${nginx_conf_content}
-NGINX_EOF
 
 # Secrets go in a .env file, NOT into docker-compose.cloud.yml itself — the
 # compose file is tracked in git (fine, no secrets in it); this .env is
@@ -66,24 +64,6 @@ MYSQL_ROOT_PASSWORD=${mysql_root_password}
 JWT_SECRET=${jwt_secret}
 ENV_EOF
 chmod 600 .env
-
-# frontend/dist doesn't exist on the instance (nginx's docker-compose.cloud.yml
-# volume-mounts ./frontend/dist, and we have no frontend/ tree here at all).
-# Serve a placeholder page until you ship a real frontend deploy step
-# (Step 3 in docs/DEVOPS_ROADMAP.md — CD via GitHub Actions). Without this,
-# nginx's bind-mount source directory wouldn't exist and the container would
-# fail to start.
-mkdir -p frontend/dist
-cat > frontend/dist/index.html <<'HTML_EOF'
-<!doctype html>
-<html><body>
-<h1>ShopHub</h1>
-<p>Backend is up. Frontend not yet deployed to this instance —
-build it locally with <code>npm run build</code> inside <code>frontend/</code>
-and ship <code>frontend/dist</code> here (scp, or a CD step later).</p>
-<p>API health: <a href="/api/products">/api/products</a></p>
-</body></html>
-HTML_EOF
 
 # ── (Optional) GHCR login ────────────────────────────────────────────────
 # Only needed if ghcr.io/<owner>/shophub is a PRIVATE package. Prefer making

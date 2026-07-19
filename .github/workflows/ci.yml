@@ -100,3 +100,16 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/shophub:latest
             ghcr.io/${{ github.repository_owner }}/shophub:${{ github.sha }}
+
+      # Frontend ships as its own image (nginx + built dist + nginx.conf baked
+      # in) so the instance can pull it from GHCR like the backend — no more
+      # building locally and scp'ing frontend/dist to the box.
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/shophub-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/shophub-frontend:${{ github.sha }}

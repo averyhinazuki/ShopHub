@@ -100,7 +100,6 @@ resource "aws_instance" "shophub" {
     mysql_root_password    = var.mysql_root_password
     jwt_secret             = var.jwt_secret
     docker_compose_content = file("${path.module}/../../docker-compose.cloud.yml")
-    nginx_conf_content     = file("${path.module}/../nginx/nginx.conf")
   })
 
   # Changing user_data alone doesn't re-run it on an already-booted instance

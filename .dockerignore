@@ -1,0 +1,27 @@
+# Files excluded from the Docker build context — what `docker build` tars up
+# and sends to the daemon before any Dockerfile instruction runs. Without this
+# file, EVERY image build (backend and frontend) ships the whole repo,
+# including node_modules and Maven output, just to be ignored inside the build.
+
+# VCS history — never needed inside an image
+.git
+
+# Backend build output (the image builds from src/, not from a local target/)
+target
+
+# Frontend: dependencies are installed and dist is built INSIDE the image;
+# stale local copies must not leak in
+frontend/node_modules
+frontend/dist
+
+# Infrastructure code and state — irrelevant to app images, and state files
+# can contain secrets
+infra/terraform
+terraform.tfstate*
+
+# IDE / docs / test assets
+.idea
+*.iml
+docs
+images
+jmeter

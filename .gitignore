@@ -76,4 +76,8 @@ infra/terraform/crash.log
 # Real tfvars has real secrets in it; only terraform.tfvars.example is tracked.
 infra/terraform/terraform.tfvars
 infra/terraform/*.auto.tfvars
+# Guard against terraform accidentally run outside infra/terraform (it drops
+# state wherever it runs) — ignore state files anywhere in the repo.
+*.tfstate
+*.tfstate.*
 

@@ -75,6 +75,11 @@ resource "aws_instance" "shophub" {
   key_name               = aws_key_pair.shophub.key_name
   vpc_security_group_ids = [aws_security_group.shophub.id]
 
+  # Lets the preinstalled SSM agent register with Systems Manager, so CI can
+  # deploy via `aws ssm send-command` with no inbound SSH (see iam.tf).
+  # Attaching/changing a profile is an in-place update, not a replacement.
+  iam_instance_profile = aws_iam_instance_profile.shophub.name
+
   # Without this, the instance only gets a private IP inside the default VPC
   # and you'd need a bastion/VPN to reach it. Fine for a learning project to
   # expose directly; the security group is what actually gates access.

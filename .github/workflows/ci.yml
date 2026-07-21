@@ -5,6 +5,11 @@ on:
     branches: [ main, dev ]
   pull_request:
     branches: [ main, dev ]
+  # Manual escape hatch. The path filters below deliberately do NOT treat a
+  # change to this workflow as a reason to rebuild the images, so when a build
+  # step itself changes (cache scope, tags, buildx setup) there may be no code
+  # change to piggyback on — trigger a run by hand instead.
+  workflow_dispatch:
 
 jobs:
   # ── What changed? ─────────────────────────────────────────────────────────
@@ -25,13 +30,21 @@ jobs:
         id: filter
         with:
           filters: |
-            # Paths owned by BOTH artifacts, or by the pipeline itself.
-            # Misclassification here is the real risk of path filtering, so
-            # the rule is: when unsure, list it as shared — the safe failure
-            # mode is "built more than needed", never "silently not deployed".
+            # Paths that genuinely change BOTH images' contents. The test is
+            # narrow on purpose: "does editing this file change what ends up
+            # inside an image?" — not "is this file vaguely build-related".
+            #
+            # .dockerignore qualifies because both builds use `context: .`, so
+            # it decides what each build context contains.
+            #
+            # Two files were deliberately REMOVED from this list:
+            #   - this workflow — it orchestrates builds but is not an input to
+            #     them; see workflow_dispatch above for the manual override.
+            #   - docker-compose.cloud.yml — it is not an image input either,
+            #     and CI never ships it: the instance's copy is written by
+            #     cloud-init from Terraform's templatefile() (user_data.sh.tpl),
+            #     so editing it requires `terraform apply`, not a rebuild.
             shared: &shared
-              - '.github/workflows/ci.yml'
-              - 'docker-compose.cloud.yml'
               - '.dockerignore'
             backend:
               - *shared

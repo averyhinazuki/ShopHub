@@ -191,17 +191,24 @@ resource "aws_volume_attachment" "data" {
 }
 
 # ── Elastic IP ──────────────────────────────────────────────────────────
-# A plain public IP on the instance changes if you stop/start it. Attaching
-# an EIP gives you a stable address so you don't have to update DNS/bookmarks
-# after every restart. Note: AWS bills an EIP hourly while it's allocated but
-# NOT attached to a running instance — don't `terraform destroy` the instance
-# and leave the EIP dangling, or `terraform destroy` everything together.
-resource "aws_eip" "shophub" {
-  instance = aws_instance.shophub.id
-  domain   = "vpc"
-
-  tags = {
-    Name    = "shophub"
-    Project = "shophub"
+# A plain public IP changes if you stop/start the instance; an EIP gives you a
+# stable address. This used to be an `aws_eip` RESOURCE here, which meant
+# `terraform destroy` released 52.4.114.4 back to AWS and the next apply came
+# up on a different address — every teardown silently invalidated bookmarks,
+# the README and any DNS pointing at it.
+#
+# The address now lives in infra/terraform/persistent/ with the data volume,
+# for exactly the same reason: it is an identity, not a machine. This stack
+# owns only the ASSOCIATION — the disposable half — so destroying it detaches
+# the address and leaves it allocated for the next apply to pick back up.
+data "aws_eip" "shophub" {
+  filter {
+    name   = "tag:Name"
+    values = ["shophub"]
   }
+}
+
+resource "aws_eip_association" "shophub" {
+  allocation_id = data.aws_eip.shophub.id
+  instance_id   = aws_instance.shophub.id
 }

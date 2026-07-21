@@ -115,6 +115,38 @@ resource "aws_ebs_volume" "data" {
   }
 }
 
+# ── Elastic IP ──────────────────────────────────────────────────────────────
+# Lives here for the same reason the volume does: it is an identity that
+# should outlive the machine holding it. When this was in the app stack,
+# `terraform destroy` released 52.4.114.4 back to AWS's pool and the next
+# apply came back on a different address — so every teardown invalidated
+# bookmarks, the README, and any DNS record pointing at it.
+#
+# The app stack now attaches it with an aws_eip_association, which is the
+# disposable half of the relationship. Same split as the volume: the app
+# stack owns the attachment, this layer owns the thing being attached.
+#
+# COST NOTE, because it is not free and the trade-off is real: AWS bills every
+# public IPv4 address at $0.005/hour whether or not it is attached to a
+# running instance. While the stack is up that is a wash — you pay it either
+# way. The difference shows up when you tear the stack down to stop paying
+# for it: the address keeps billing at roughly $3.60/month for as long as you
+# hold it. That is the price of the address being stable. If you would rather
+# not pay it, delete this resource, move it back to ../main.tf as a plain
+# `aws_eip`, and accept a new IP after every destroy.
+resource "aws_eip" "shophub" {
+  domain = "vpc"
+
+  tags = {
+    Name    = "shophub"
+    Project = "shophub"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 output "volume_id" {
   description = "Referenced by the app stack via a tag-filtered data source, not by this ID — printed for console lookups and manual snapshots."
   value       = aws_ebs_volume.data.id
@@ -123,4 +155,9 @@ output "volume_id" {
 output "availability_zone" {
   description = "The AZ the app stack's instance will be pinned to."
   value       = aws_ebs_volume.data.availability_zone
+}
+
+output "public_ip" {
+  description = "The stable address. Survives `terraform destroy` of the app stack."
+  value       = aws_eip.shophub.public_ip
 }

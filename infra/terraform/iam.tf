@@ -62,9 +62,20 @@ resource "aws_iam_instance_profile" "shophub" {
 # exists to leak, rotate, or lose — and the whole identity is now Terraform-
 # managed and genuinely disposable.
 resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = []
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+
+  # thumbprint_list is deliberately absent. IAM stopped relying on the
+  # certificate thumbprint for this provider in 2023 — it validates GitHub's
+  # certificate against its own trust store instead — and AWS now populates
+  # the field itself on creation. Pinning it (or setting it empty, as this
+  # first did) produces a permanent one-line diff as Terraform tries to
+  # correct what AWS keeps putting back. Older guides still hardcode
+  # 6938fd4d...; copying that is how you end up with a config that breaks the
+  # day GitHub rotates its certificate.
+  lifecycle {
+    ignore_changes = [thumbprint_list]
+  }
 
   tags = {
     Project = "shophub"

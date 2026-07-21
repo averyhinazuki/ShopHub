@@ -21,13 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read   # lets paths-filter read changed files on PR events
+    # On workflow_dispatch there is no diff to compute: paths-filter would
+    # default `base` to the default branch and `ref` to HEAD, so dispatching
+    # from main compares main against main, finds an empty changeset, and
+    # reports NOTHING changed. A manual run would then skip every build while
+    # still reporting green — the worst possible failure mode for an escape
+    # hatch. A manual run means "build everything", so say so explicitly.
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.backend }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         with:
           filters: |
             # Paths that genuinely change BOTH images' contents. The test is

@@ -13,6 +13,11 @@ output "ssh_command" {
   value       = "ssh -i ~/.ssh/shophub ec2-user@${aws_eip.shophub.public_ip}"
 }
 
+output "ci_role_arn" {
+  description = "Paste into the AWS_ROLE_ARN repo secret (Settings -> Secrets and variables -> Actions). Replaces AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, which should be deleted."
+  value       = aws_iam_role.ci.arn
+}
+
 output "app_url" {
   description = "URL to hit once nginx + the app are up."
   value       = "http://${aws_eip.shophub.public_ip}/"

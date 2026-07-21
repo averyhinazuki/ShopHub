@@ -231,15 +231,29 @@ jobs:
           contains(needs.*.result, 'success') &&
           !contains(needs.*.result, 'failure') }}
 
+    # `id-token: write` lets this job ask GitHub for a signed OIDC token to
+    # present to AWS. Without it the assume-role step fails with "Credentials
+    # could not be loaded" — and note that naming ANY permission resets all
+    # the others to none, which is why `contents: read` has to be restated.
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
-      # Credentials for the shophub-ci IAM user (see infra/terraform/iam.tf),
-      # stored as repo secrets. The user can only send the run-shell-script
-      # SSM document to instances tagged Name=shophub — nothing else.
+      # No access keys. GitHub mints a short-lived token describing this
+      # workflow run, AWS validates it against the trust policy on
+      # shophub-ci (see infra/terraform/iam.tf) and hands back ~1-hour
+      # credentials. The role can only send the run-shell-script SSM document
+      # to instances tagged Name=shophub — nothing else — and only this repo's
+      # main branch can assume it at all.
+      #
+      # AWS_ROLE_ARN is a repo secret purely to keep the account ID out of a
+      # public repo; it isn't secret in the cryptographic sense — the trust
+      # policy, not obscurity, is what stops anyone else using it.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
       # No SSH, no host IP secret: the instance is found by tag (survives

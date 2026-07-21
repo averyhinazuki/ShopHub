@@ -15,6 +15,18 @@ dnf update -y
 dnf install -y docker
 systemctl enable --now docker
 
+# ── SSM agent ───────────────────────────────────────────────────────────
+# The standard AL2023 AMI ships this preinstalled and running, but the
+# MINIMAL variant does not — and a too-broad AMI name glob in main.tf used to
+# select minimal, producing a box that served traffic perfectly while every
+# CI deploy failed with "InvalidInstanceId: Instances not in a valid state for
+# account". main.tf now pins the standard AMI via SSM parameter, so this is
+# redundant there; it stays as defence in depth so the deploy path can never
+# again depend on which AMI variant got picked. Both commands are no-ops when
+# the agent is already present and enabled.
+dnf install -y amazon-ssm-agent
+systemctl enable --now amazon-ssm-agent
+
 # `docker compose` (v2, no hyphen) is the compose plugin, distinct from the
 # old standalone `docker-compose` v1 binary. AL2023's repos ship `docker` but
 # NOT the compose plugin (that package lives in Docker's own CE repo), so the

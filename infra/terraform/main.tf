@@ -38,23 +38,25 @@ locals {
 
 # ── AMI: always resolve the latest Amazon Linux 2023 image ────────────────
 # Hardcoding an AMI ID would silently go stale (security patches, and
-# eventually the AMI gets deprecated). Querying by name pattern + owner at
-# plan time means every `terraform apply` uses whatever AL2023 build is
-# current, at the cost of the instance being replaced if the AMI changes
-# between applies (acceptable for a learning box; you'd pin this for prod).
-data "aws_ami" "al2023" {
-  most_recent = true
-  owners      = ["amazon"] # restrict to Amazon's own account, not arbitrary public AMIs
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
+# eventually the AMI gets deprecated), so this resolves at plan time — at the
+# cost of the instance being replaced if the AMI changes between applies
+# (acceptable for a learning box; you'd pin this for prod).
+#
+# This was previously a `data "aws_ami"` block filtering on the name pattern
+# "al2023-ami-*-x86_64". That glob is a trap: it also matches
+# "al2023-ami-MINIMAL-*", and AWS publishes the minimal images a few minutes
+# AFTER the standard ones, so `most_recent = true` picked minimal every time.
+# The minimal AMI ships without amazon-ssm-agent — the instance booted and
+# served traffic fine, but never registered with Systems Manager, so the CI
+# deploy job failed with:
+#   InvalidInstanceId: Instances not in a valid state for account
+#
+# AWS publishes the canonical "latest AL2023, standard variant, default
+# kernel" AMI ID as a public SSM parameter. Using it removes the glob
+# ambiguity entirely — there is no pattern left to get subtly wrong, and no
+# tie-break between same-timestamp kernel variants.
+data "aws_ssm_parameter" "al2023" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
 # ── SSH key pair ────────────────────────────────────────────────────────────
@@ -69,7 +71,7 @@ resource "aws_key_pair" "shophub" {
 
 # ── EC2 instance ─────────────────────────────────────────────────────────
 resource "aws_instance" "shophub" {
-  ami                    = data.aws_ami.al2023.id
+  ami                    = data.aws_ssm_parameter.al2023.value
   instance_type          = var.instance_type
   subnet_id              = local.subnet_id
   key_name               = aws_key_pair.shophub.key_name

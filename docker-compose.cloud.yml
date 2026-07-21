@@ -20,6 +20,11 @@
 #     /api to the app. It runs from the shophub-frontend image built by CI
 #     (Dockerfile.frontend: nginx + dist + infra/nginx/nginx.conf baked in),
 #     so the frontend deploys by image pull — no manual scp of frontend/dist.
+#   - MySQL and MongoDB bind-mount /data/* (a persistent EBS volume) instead
+#     of using Docker named volumes. Named volumes sit on the instance's root
+#     disk and die with the instance; this stack replaces its instance for
+#     something as routine as a new AMI, so that made every rebuild a data
+#     loss event. See infra/terraform/persistent/.
 #   - Memory is capped everywhere on purpose. Sized for a 4 GiB instance
 #     (c7i-flex.large): app ~700M + MySQL ~500M + Kafka ~400M + Mongo ~350M
 #     + Redis ~150M + nginx, leaving headroom for the OS and page cache.
@@ -76,8 +81,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # Bind mount onto the persistent EBS volume, NOT a Docker named volume.
+    # Named volumes live under /var/lib/docker/volumes on the instance's root
+    # disk, which is deleted when the instance is replaced — and this stack
+    # replaces its instance readily (a new AL2023 AMI or an edited boot script
+    # is enough). $DATA_DIR is /data, an EBS volume owned by a separate
+    # Terraform state so it outlives the box. See infra/terraform/persistent/.
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
 
   redis:
     image: redis:7
@@ -128,7 +139,7 @@ services:
       timeout: 5s
       retries: 5
     volumes:
-      - mongo_data:/data/db
+      - ${DATA_DIR:-./data}/mongo:/data/db
 
   # The frontend image (see Dockerfile.frontend) is nginx with the built
   # frontend AND nginx.conf baked in — pulled from GHCR like the app image,
@@ -142,6 +153,6 @@ services:
     depends_on:
       - app
 
-volumes:
-  mysql_data:
-  mongo_data:
+# No top-level `volumes:` block any more. Both stateful services bind-mount
+# subdirectories of the EBS volume mounted at /data instead, so their data is
+# owned by the disk rather than by the Docker daemon on a disposable host.

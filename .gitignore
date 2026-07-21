@@ -67,11 +67,14 @@ TECH_OVERVIEW.txt
 ### Terraform ###
 # State files contain resource attributes (including secrets passed as
 # variables, e.g. mysql_root_password) in plaintext — never commit them.
-infra/terraform/.terraform/
-infra/terraform/.terraform.lock.hcl
+# Globbed rather than pinned to infra/terraform/ because there is now more
+# than one Terraform root: the app stack, and infra/terraform/persistent/
+# (the data volume, kept in its own state so `destroy` can't reach it).
+**/.terraform/
+**/.terraform.lock.hcl
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
-infra/terraform/*.tfplan
+**/*.tfplan
 infra/terraform/crash.log
 # Real tfvars has real secrets in it; only terraform.tfvars.example is tracked.
 infra/terraform/terraform.tfvars

@@ -22,25 +22,58 @@ data "aws_vpc" "default" {
   default = true
 }
 
+# The subnet is chosen by AVAILABILITY ZONE, not by sort order, because the
+# instance has to land in the same AZ as the persistent data volume — EBS
+# volumes cannot cross AZ boundaries. Deriving the subnet from the volume's AZ
+# (rather than picking a subnet and hoping the volume matches) makes the
+# constraint impossible to violate: if the volume ever moves, the instance
+# follows it automatically instead of failing at attach time with
+# "InvalidVolume.ZoneMismatch".
 data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
+
+  filter {
+    name   = "availability-zone"
+    values = [data.aws_ebs_volume.data.availability_zone]
+  }
 }
 
-# Pick one subnet deterministically (first by ID) — we only need a single
-# placement for a single instance, so we don't need to reason about spreading
-# across AZs the way a highly-available deployment would.
 locals {
   subnet_id = sort(data.aws_subnets.default.ids)[0]
+}
+
+# ── Persistent data volume (owned by ANOTHER state file) ──────────────────
+# Deliberately a `data` block, not a `resource`. The volume is created and
+# owned by infra/terraform/persistent/, which has its own state — so this
+# configuration can attach it and read its attributes, but has no power to
+# delete or replace it. `terraform destroy` here tears down the instance, the
+# EIP and the security group and leaves the database sitting in AWS, intact,
+# waiting for the next apply to reattach it.
+#
+# That is the whole design: the box is cattle, the data is not, so they do not
+# share a lifecycle. Looking it up by TAG rather than by volume ID means no ID
+# has to be copied between the two configurations by hand.
+#
+# If this errors with "no matching EBS Volume found", the persistent layer has
+# not been applied yet:
+#   cd persistent && terraform init && terraform apply
+data "aws_ebs_volume" "data" {
+  filter {
+    name   = "tag:Name"
+    values = ["shophub-data"]
+  }
 }
 
 # ── AMI: always resolve the latest Amazon Linux 2023 image ────────────────
 # Hardcoding an AMI ID would silently go stale (security patches, and
 # eventually the AMI gets deprecated), so this resolves at plan time — at the
-# cost of the instance being replaced if the AMI changes between applies
-# (acceptable for a learning box; you'd pin this for prod).
+# cost of the instance being replaced if the AMI changes between applies.
+# That used to mean losing the database with it; now that MySQL and MongoDB
+# live on a volume outside this state, replacement costs a few minutes of
+# downtime and nothing else.
 #
 # This was previously a `data "aws_ami"` block filtering on the name pattern
 # "al2023-ami-*-x86_64". That glob is a trap: it also matches
@@ -107,21 +140,54 @@ resource "aws_instance" "shophub" {
     mysql_root_password    = var.mysql_root_password
     jwt_secret             = var.jwt_secret
     docker_compose_content = file("${path.module}/../../docker-compose.cloud.yml")
+
+    # Used to build a STABLE device path for the data volume. On Nitro
+    # instances (t3/c7i/...) the "/dev/sdf" name requested below is not what
+    # the kernel actually creates — EBS volumes surface as NVMe devices and
+    # get numbered in attach order, so /dev/nvme1n1 is a guess, not a
+    # guarantee. AWS does expose the volume ID as the NVMe serial, and udev
+    # builds a symlink from it, which is deterministic:
+    #   /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol0abc123...
+    # The serial drops the hyphen from the volume ID, hence the replace().
+    data_volume_serial = replace(data.aws_ebs_volume.data.id, "-", "")
   })
 
   # Changing user_data alone doesn't re-run it on an already-booted instance
   # (cloud-init only runs user-data on first boot). This forces a replace
   # when the rendered script changes, so `terraform apply` after editing the
   # compose file or nginx config actually reaches the box instead of
-  # silently no-op'ing. Fine for a single learner instance; you would NOT
-  # want this on a stateful prod box (it destroys and recreates the EC2
-  # instance, losing anything not in a volume/DB outside it).
+  # silently no-op'ing. The caveat this comment used to carry — "you would NOT
+  # want this on a stateful box, it loses anything not on a volume outside the
+  # instance" — is now handled rather than merely noted: the databases live on
+  # the EBS volume attached below, which this state does not own.
   user_data_replace_on_change = true
 
   tags = {
     Name    = "shophub"
     Project = "shophub"
   }
+}
+
+# ── Attach the data volume ──────────────────────────────────────────────
+# Terraform owns the ATTACHMENT (a relationship, disposable) but not the
+# VOLUME (the data, permanent). Destroying this stack detaches; it does not
+# delete.
+#
+# The requested device name is advisory on Nitro instances — see the
+# data_volume_serial comment above for why user-data addresses the disk by
+# its udev by-id symlink instead of trusting this path.
+resource "aws_volume_attachment" "data" {
+  device_name = "/dev/sdf"
+  volume_id   = data.aws_ebs_volume.data.id
+  instance_id = aws_instance.shophub.id
+
+  # Detaching a volume with a mounted filesystem can hang, because the guest
+  # OS never got told to unmount. Instance replacement terminates the
+  # instance, which detaches cleanly on its own, so the common path is fine —
+  # but a manual `terraform destroy -target=aws_volume_attachment.data`
+  # against a live box would stall without this. ext4 journals, so the worst
+  # case is a recovery on next mount rather than corruption.
+  force_detach = true
 }
 
 # ── Elastic IP ──────────────────────────────────────────────────────────

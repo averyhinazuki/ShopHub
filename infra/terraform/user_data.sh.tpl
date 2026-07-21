@@ -43,6 +43,66 @@ docker compose version   # fail fast (set -e) if the plugin didn't install
 # since cloud-init user-data always runs as root anyway.
 usermod -aG docker ec2-user
 
+# ── Persistent data volume ──────────────────────────────────────────────
+# MySQL and MongoDB store their data on a separate EBS volume that is NOT
+# owned by this Terraform state (see infra/terraform/persistent/), so it
+# survives instance replacement. Everything below turns "a disk is attached"
+# into "a filesystem is mounted at /data", exactly once, idempotently.
+#
+# Address the disk by its udev by-id symlink rather than /dev/sdf or
+# /dev/nvme1n1. On Nitro instances the requested /dev/sdf name is not honoured
+# and NVMe numbering depends on attach order, so both are guesses; the volume
+# ID is baked into the NVMe serial and is not.
+DEVICE="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_serial}"
+MOUNT=/data
+
+# The attachment is a separate API call that Terraform makes AFTER the
+# instance exists, so at this point in first boot the disk may legitimately
+# not be there yet. Wait rather than race.
+for _ in $(seq 1 60); do
+  if [ -e "$DEVICE" ]; then break; fi
+  sleep 5
+done
+
+# Fail loudly if it never showed up. The tempting alternative — carry on and
+# let Docker create /data on the root filesystem — would look like a healthy
+# deploy while silently reintroducing the exact bug this volume exists to fix:
+# a database that dies with the instance. A box that refuses to boot is much
+# easier to notice than one quietly writing to the wrong disk.
+if [ ! -e "$DEVICE" ]; then
+  echo "FATAL: data volume $DEVICE never attached; refusing to start the stack" >&2
+  exit 1
+fi
+
+# Format ONLY if there is no filesystem yet. This single condition is what
+# separates "first ever boot" from "every rebuild afterwards" — an
+# unconditional mkfs here would wipe the database on every instance
+# replacement, which is precisely the failure this whole change exists to
+# prevent. blkid prints the filesystem type and exits non-zero when the disk
+# is raw, hence the `|| true` under `set -e`.
+FSTYPE=$(blkid -p -s TYPE -o value "$DEVICE" 2>/dev/null || true)
+if [ -z "$FSTYPE" ]; then
+  echo "No filesystem on $DEVICE — first boot, formatting"
+  mkfs -t ext4 -L shophub-data "$DEVICE"
+else
+  echo "Existing $FSTYPE filesystem on $DEVICE — preserving it"
+fi
+
+mkdir -p "$MOUNT"
+
+# Persist the mount so a plain reboot (not just cloud-init's first boot)
+# brings the data back. `nofail` keeps a missing disk from dropping the box
+# into emergency mode where it is unreachable over SSH — a rescue-by-console
+# situation on a machine with no console.
+if ! grep -q "$DEVICE" /etc/fstab; then
+  echo "$DEVICE $MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
+fi
+mount "$MOUNT"
+
+# One directory per datastore, so the two never share a filesystem root and
+# `du -sh /data/*` answers "who is using the disk".
+mkdir -p "$MOUNT/mysql" "$MOUNT/mongo"
+
 # ── App directory + the compose stack ───────────────────────────────────
 mkdir -p /opt/shophub
 cd /opt/shophub
@@ -74,6 +134,7 @@ cat > .env <<'ENV_EOF'
 APP_IMAGE=${app_image}
 MYSQL_ROOT_PASSWORD=${mysql_root_password}
 JWT_SECRET=${jwt_secret}
+DATA_DIR=/data
 ENV_EOF
 chmod 600 .env
 

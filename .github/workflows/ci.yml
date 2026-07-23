@@ -55,7 +55,7 @@ jobs:
       mysql:
         image: mysql:8
         env:
-          MYSQL_ROOT_PASSWORD: 123456
+          MYSQL_ROOT_PASSWORD: ${{ secrets.TEST_MYSQL_PASSWORD }}
           MYSQL_DATABASE: flash_sale_db
         ports:
           - 3306:3306
@@ -112,6 +112,8 @@ jobs:
 
       - name: Run tests
         run: mvn test --no-transfer-progress
+        env:
+          MYSQL_PASSWORD: ${{ secrets.TEST_MYSQL_PASSWORD }}
 
   # Separate publish jobs so each image can be skipped independently; a skipped
   # job also skips whatever `needs` it (except deploy, which opts out).

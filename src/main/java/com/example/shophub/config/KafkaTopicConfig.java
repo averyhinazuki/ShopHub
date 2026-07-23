@@ -12,11 +12,8 @@ public class KafkaTopicConfig {
     public static final String PAYMENT_COMPLETED_TOPIC  = "payment-completed";
     public static final String CHECKOUT_REQUESTED_TOPIC = "checkout-requested";
 
-    /**
-     * Declares the order-created topic.
-     * Spring Boot's KafkaAdmin will create it automatically on startup
-     * if it doesn't already exist in the broker.
-     */
+    // KafkaAdmin creates any topic declared as a NewTopic bean on startup.
+
     @Bean
     public NewTopic orderCreatedTopic() {
         return TopicBuilder.name(ORDER_CREATED_TOPIC)
@@ -25,9 +22,6 @@ public class KafkaTopicConfig {
                 .build();
     }
 
-    /**
-     * Declares the payment-completed topic.
-     */
     @Bean
     public NewTopic paymentCompletedTopic() {
         return TopicBuilder.name(PAYMENT_COMPLETED_TOPIC)

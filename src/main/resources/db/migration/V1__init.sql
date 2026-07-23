@@ -1,6 +1,5 @@
--- Baseline schema, exported from the Hibernate-generated database.
--- From here on, Hibernate runs with ddl-auto: validate and all schema
--- changes go through versioned Flyway migrations (V2__, V3__, ...).
+-- Baseline schema. From here Hibernate runs ddl-auto: validate; all schema
+-- changes go through versioned Flyway migrations.
 
 CREATE TABLE `users` (
   `id` bigint NOT NULL AUTO_INCREMENT,

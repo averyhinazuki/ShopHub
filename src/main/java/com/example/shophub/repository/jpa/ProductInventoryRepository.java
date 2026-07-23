@@ -12,24 +12,22 @@ public interface ProductInventoryRepository extends JpaRepository<ProductInvento
 
     Optional<ProductInventory> findByProductId(Long productId);
 
-    // Conditional deduction — returns 1 on success, 0 if stock insufficient (the safety net).
-    // @Transactional: checkout() has no outer transaction; this starts + commits its own
-    // short tx so the deduction is immediately durable before the lock is released.
+    // Conditional deduction: 1 on success, 0 if stock is insufficient. @Transactional
+    // commits its own short tx so the deduction is durable before the lock releases.
     @Transactional
     @Modifying
     @Query("UPDATE ProductInventory pi SET pi.availableStock = pi.availableStock - :qty " +
            "WHERE pi.product.id = :productId AND pi.availableStock >= :qty")
     int deductStock(Long productId, int qty);
 
-    // Restore stock — no condition needed (we are adding back, not racing to subtract).
-    // @Transactional: same reason as deductStock — compensation runs outside any outer tx.
+    // Unconditional restore (compensation path); own tx, same as deductStock.
     @Transactional
     @Modifying
     @Query("UPDATE ProductInventory pi SET pi.availableStock = pi.availableStock + :qty " +
            "WHERE pi.product.id = :productId")
     int restoreStock(Long productId, int qty);
 
-    // Admin inventory adjust — delta can be positive (restock) or negative (correction/write-off)
+    // Admin adjust: delta positive (restock) or negative (correction/write-off).
     @Transactional
     @Modifying
     @Query("UPDATE ProductInventory pi " +

@@ -14,19 +14,15 @@ import java.util.concurrent.TimeUnit;
 /**
  * Owns all Redis interactions for the product cache.
  *
- * Keys (both share TTL = 60s so they expire together):
- *   product:{id}:detail  →  full ProductResponse JSON
- *   product:{id}:stock   →  availableStock integer string
+ * Keys (shared 60s TTL): product:{id}:detail holds the ProductResponse JSON,
+ * product:{id}:stock holds availableStock.
  *
- * Delayed double deletion pattern (called by ProductService on every write):
- *   1. deleteCache(id)                ← first deletion  (before MySQL write)
- *   2. MySQL write happens
- *   3. scheduleSecondDeletion(id)     ← async second deletion ~500ms later
- *      Kills any stale entry a concurrent reader cached between steps 1 and 2.
+ * Writers use delayed double deletion: deleteCache before the MySQL write, then
+ * scheduleSecondDeletion ~500ms after, to evict anything a concurrent reader
+ * re-cached mid-write.
  *
- * This bean MUST be a separate Spring component from ProductService so that
- * Spring's proxy intercepts the @Async annotation on scheduleSecondDeletion().
- * Self-calls within the same bean bypass the proxy and @Async has no effect.
+ * Kept separate from ProductService so Spring's proxy applies @Async on
+ * scheduleSecondDeletion — an intra-bean self-call would bypass it.
  */
 @Slf4j
 @Service
@@ -82,12 +78,9 @@ public class ProductCacheService {
     }
 
     /**
-     * Second deletion — fires ~500ms after the MySQL write on a background thread.
-     * Kills any stale value a concurrent reader cached between the first deletion
-     * and the MySQL commit.
-     *
-     * @Async("cacheEvictExecutor") means this returns immediately to the caller;
-     * the sleep + delete run on the cacheEvictExecutor thread pool.
+     * Second deletion — runs ~500ms after the write on the cacheEvictExecutor
+     * pool (returns immediately to the caller), evicting anything a concurrent
+     * reader re-cached between the first deletion and the commit.
      */
     @Async("cacheEvictExecutor")
     public void scheduleSecondDeletion(Long productId) {

@@ -15,18 +15,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * Logs each authenticated HTTP request to MongoDB (user_action_log collection).
- * Registered inside the Spring Security filter chain after JwtFilter, so
- * SecurityContextHolder already contains the resolved Authentication when this runs.
+ * Logs each authenticated request to MongoDB (user_action_log). Sits after
+ * JwtFilter, so the Authentication is already resolved when it runs.
  *
- * Design decisions:
- *  - Runs the filter chain FIRST, then writes the log. This means the log entry is written
- *    regardless of the response status, but after the response is committed (fire-and-forget
- *    via @Async — no impact on response latency).
- *  - Anonymous / unauthenticated requests are skipped — public endpoints (product browsing)
- *    don't have a userId to associate.
- *  - NOT a @Component — registered manually in SecurityConfig to avoid Spring Boot's
- *    auto-registration which would cause the filter to fire twice per request.
+ * Runs the chain first, then logs asynchronously (@Async), off the response path.
+ * Anonymous requests are skipped — they have no userId. Registered manually in
+ * SecurityConfig, not as a @Component, to avoid double registration by Spring Boot.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -40,10 +34,8 @@ public class UserActionLogFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        // Let the rest of the chain (controllers, etc.) execute first
         filterChain.doFilter(request, response);
 
-        // After response is ready — check if the request was authenticated
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null
                 && auth.isAuthenticated()

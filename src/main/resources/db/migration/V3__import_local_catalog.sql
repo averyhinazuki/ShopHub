@@ -1,19 +1,12 @@
--- Real catalog imported from the local dev DB (dump of 2026-07-18),
--- superseding the V2 demo data. V2 stays frozen (Flyway checksums applied
--- migrations); this migration removes V2's rows and inserts the true catalog.
+-- Replace the V2 demo catalog with the real one (dump of 2026-07-18).
+--   * demo deletes match (name, price) pairs, so the local DB's real
+--     'Wireless Earbuds Pro' (59.99) survives while V2's (89.90) is removed
+--   * inserts guarded by NOT EXISTS on name — no-ops where products already
+--     exist, preserving IDs referenced by local orders/carts
+--   * no fixed IDs; categories resolved by name
 --
--- Safety properties (same philosophy as V2, one refinement):
---   * demo deletes match on (name, price) pairs — not name alone — so the
---     local DB's real 'Wireless Earbuds Pro' (59.99) is untouched while
---     V2's demo one (89.90) is removed
---   * inserts are guarded by NOT EXISTS on name -> no-ops on the local DB
---     where these products already exist (preserving their IDs, which local
---     orders/carts reference)
---   * no fixed IDs anywhere; categories resolved by name
---
--- Deliberately NOT imported: 'Low Stock Widget' (a local compensation-test
--- fixture, not catalog) and all runtime state (users, orders, carts,
--- partially-consumed stock counts — inventory here starts at full stock).
+-- Excludes runtime state and the 'Low Stock Widget' test fixture; inventory
+-- starts at full stock.
 
 -- 1) Retire the V2 demo catalog (inventory first: FK points at products).
 DELETE pi FROM product_inventory pi
@@ -37,8 +30,7 @@ WHERE (name, price) IN (
   ('Air Fryer Compact',        79.00)
 );
 
--- 2) Categories ('Electronics'/'Fashion' already exist from V2 -> IGNORE
---    keeps the existing rows; 'Home & Living'/'Sports'/'Beauty' are new).
+-- 2) Categories — IGNORE keeps existing Electronics/Fashion; the rest are new.
 INSERT IGNORE INTO categories (name, description) VALUES
   ('Electronics',   'Updated: phones, laptops, and accessories'),
   ('Fashion',       'Clothing, shoes, and accessories'),
@@ -71,10 +63,8 @@ SELECT * FROM (
 ) AS seed
 WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.name = seed.name);
 
--- 4) Full starting stock for every imported product. Local totals kept where
---    they existed (AirPods Max 50, iPhone 21); the rest default to 100.
---    INSERT IGNORE: on the local DB, existing inventory rows (with their
---    real consumed counts) win and are left alone.
+-- 4) Starting stock. Local totals kept (AirPods Max 50, iPhone 21); rest 100.
+--    INSERT IGNORE leaves existing inventory rows (real consumed counts) alone.
 INSERT IGNORE INTO product_inventory (product_id, available_stock, total_stock)
 SELECT p.id, s.stock, s.stock
 FROM products p

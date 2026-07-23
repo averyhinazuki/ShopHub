@@ -1,17 +1,10 @@
--- Seed catalog: demo categories, products, and stock, so every fresh
--- environment (a rebuilt EC2 box, a teammate's laptop, CI) is born with a
--- browsable shop instead of an empty one.
+-- Seed catalog (demo categories, products, stock) so fresh environments start
+-- browsable. Idempotent on databases that already have data: categories and
+-- inventory via INSERT IGNORE, products guarded by NOT EXISTS on name. No fixed
+-- IDs — AUTO_INCREMENT assigns them, lookups go by name.
 --
--- Written to be safe on databases that ALREADY have data (e.g. the local dev
--- DB, where Flyway will also run this once):
---   * categories are keyed by their unique name       -> INSERT IGNORE
---   * products have no natural unique key             -> guarded by NOT EXISTS on name
---   * inventory is unique per product                 -> INSERT IGNORE
--- No fixed IDs anywhere: AUTO_INCREMENT assigns them, lookups go by name.
---
--- Flyway rule worth remembering: once this file has been applied anywhere,
--- it is FROZEN (Flyway records its checksum and fails if it changes).
--- Catalog additions later go in V3__, not by editing this file.
+-- This file is frozen once applied (Flyway checksum); later catalog changes go
+-- in a new migration, not here.
 
 INSERT IGNORE INTO categories (name, description) VALUES
   ('Electronics', 'Gadgets and devices'),
@@ -29,8 +22,7 @@ SELECT * FROM (
 ) AS seed
 WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.name = seed.name);
 
--- Stock rows: flash-sale checkout decrements available_stock, so a product
--- without an inventory row can be browsed but never bought.
+-- Stock rows — a product without inventory can be browsed but never bought.
 INSERT IGNORE INTO product_inventory (product_id, available_stock, total_stock)
 SELECT p.id, s.stock, s.stock
 FROM products p

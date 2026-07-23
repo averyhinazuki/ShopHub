@@ -61,33 +61,26 @@ public class OrderService {
     @Value("${app.checkout.status-ttl-minutes:30}")
     private int checkoutStatusTtlMinutes;
 
-    /**
-     * Self-injection: Spring injects the AOP proxy of this bean back as a field.
-     * Required so that internal calls to @Transactional methods (loadCartSnapshot,
-     * persistOrder) go through the proxy and honour the transaction semantics.
-     * @Lazy breaks the circular dependency: Spring builds OrderService first,
-     * then injects the proxy lazily on first use.
-     */
+    // Self-injection of the AOP proxy so internal calls to @Transactional
+    // methods (loadCartSnapshot, persistOrder) honour transaction semantics.
+    // @Lazy breaks the resulting self-referential construction cycle.
     @Lazy
     @Autowired
     private OrderService self;
 
-    // ── Snapshot types (static so they can cross method boundaries) ──────────
-
-    /** Immutable value representing one cart line at the moment of checkout. */
+    /** One cart line at checkout time. */
     private record CheckoutItem(Long productId, int qty, BigDecimal price) {}
 
-    /** Cart state snapshot loaded before the deduction loop. */
+    /** Cart snapshot taken before the deduction loop. */
     private record CartSnapshot(Long cartId, List<CheckoutItem> items) {}
 
-    // =========================================================================
-    // Checkout — hot path
-    // =========================================================================
+    // ── Checkout ─────────────────────────────────────────────────────────────
 
     /**
-     * Async checkout entry point: validates the cart, publishes a checkout-requested
-     * Kafka event, and returns 202 Accepted with a checkoutId. The consumer does the
-     * actual stock deduction and order creation. Client polls getCheckoutStatus().
+     * Async checkout entry point: validates the cart, publishes a
+     * CheckoutRequestedEvent, and returns a PENDING status with a checkoutId.
+     * Stock deduction and order creation happen in the consumer; the client
+     * polls getCheckoutStatus().
      */
     public CheckoutStatusResponse initiateCheckout() {
         Long userId = securityUtils.resolveUserId();
@@ -125,12 +118,13 @@ public class OrderService {
     }
 
     /**
-     * Called by CheckoutRequestedConsumer — same stock-deduction and order-creation
-     * logic as the former synchronous checkout(), but takes userId as a parameter
-     * instead of reading from SecurityContext (consumer runs on a Kafka listener thread).
+     * Runs the stock deduction and order creation. Called by
+     * CheckoutRequestedConsumer on a Kafka listener thread, so userId is passed
+     * in rather than read from the SecurityContext.
      *
-     * No outer @Transactional by design: each stock deduction is a committed UPDATE
-     * under its own per-product lock. Compensation handles rollback if persistOrder fails.
+     * Intentionally not wrapped in an outer @Transactional: each deduction is a
+     * committed UPDATE under its own per-product lock, and the compensation loop
+     * restores stock if persistOrder fails.
      */
     public OrderResponse processCheckout(Long userId) {
         CartSnapshot snapshot = self.loadCartSnapshot(userId);
@@ -200,9 +194,9 @@ public class OrderService {
     }
 
     /**
-     * Loads cart items in a read-only transaction so lazy-loaded Product associations
-     * are reachable. Validates ACTIVE status and snapshots prices.
-     * Must be called via 'self' so the @Transactional proxy intercepts it.
+     * Loads cart items in a read-only transaction so lazy Product associations
+     * resolve, validates ACTIVE status, and snapshots prices. Call via 'self' so
+     * the @Transactional proxy applies.
      */
     @Transactional(readOnly = true)
     public CartSnapshot loadCartSnapshot(Long userId) {
@@ -214,7 +208,7 @@ public class OrderService {
         }
         List<CheckoutItem> checkoutItems = new ArrayList<>();
         for (CartItem ci : items) {
-            Product p = ci.getProduct(); // lazy-load safe inside @Transactional
+            Product p = ci.getProduct();
             if (p.getStatus() != ProductStatus.ACTIVE) {
                 throw new IllegalArgumentException(
                         "Product '" + p.getName() + "' (id=" + p.getId() + ") is unavailable");
@@ -225,9 +219,9 @@ public class OrderService {
     }
 
     /**
-     * Creates Order + OrderItems + clears cart + publishes domain event in one transaction.
-     * Must be called via 'self' so the @Transactional proxy intercepts it.
-     * Public visibility is required for Spring's proxy to wrap it — treat as package-internal.
+     * Creates the Order and OrderItems, clears the cart, and publishes the domain
+     * event, all in one transaction. Call via 'self' so the @Transactional proxy
+     * applies; public only because the proxy requires it — treat as internal.
      */
     @Transactional
     public OrderResponse persistOrder(List<CheckoutItem> items, Long userId, Long cartId) {
@@ -245,35 +239,33 @@ public class OrderService {
         for (CheckoutItem item : items) {
             OrderItem oi = new OrderItem();
             oi.setOrder(order);
-            // getReferenceById: returns a proxy (no extra SELECT); valid within this tx
+            // getReferenceById returns a proxy — no extra SELECT within this tx.
             oi.setProduct(productRepository.getReferenceById(item.productId()));
             oi.setQuantity(item.qty());
-            oi.setPriceAtPurchase(item.price()); // snapshot — immune to future price changes
+            oi.setPriceAtPurchase(item.price()); // price snapshot, not a live reference
             orderItemRepository.save(oi);
         }
 
         cartItemRepository.deleteByCartId(cartId);
 
-        // Publish in-process event; @TransactionalEventListener(AFTER_COMMIT) bridge
-        // forwards to Kafka only after this transaction commits (Step 9 wires the send).
+        // In-process event; the AFTER_COMMIT bridge forwards it to Kafka only once
+        // this transaction commits.
         eventPublisher.publishEvent(
                 new OrderCreatedDomainEvent(this, order.getId(), userId, order.getCreatedAt()));
 
         log.info("[Checkout] Order created: orderId={} userId={} total={} items={}",
                 order.getId(), userId, total, items.size());
 
-        // findByOrderId inside the same tx so lazy product proxies are resolvable
+        // Re-read inside the same tx so lazy product proxies resolve.
         return toDetailResponse(order, orderItemRepository.findByOrderId(order.getId()));
     }
 
-    // =========================================================================
-    // Pay — mock payment trigger
-    // =========================================================================
+    // ── Pay ──────────────────────────────────────────────────────────────────
 
     /**
-     * Conditional UPDATE: exactly one of {/pay, OrderExpiryScheduler} wins.
-     * rowsAffected = 0  → already PAID or CANCELLED → 409.
-     * rowsAffected = 1  → PAID; publishes PaymentCompletedDomainEvent AFTER_COMMIT.
+     * Marks an order PAID via a conditional UPDATE, so exactly one of {/pay,
+     * OrderExpiryScheduler} wins. rows=0 means already paid or cancelled (409);
+     * rows=1 publishes PaymentCompletedDomainEvent after commit.
      */
     @Transactional
     public OrderResponse pay(Long orderId) {
@@ -293,7 +285,7 @@ public class OrderService {
                     + " cannot be paid (status is not PENDING — already paid or cancelled)");
         }
 
-        // clearAutomatically = true on payIfPending ensures this re-read sees PAID + paidAt
+        // payIfPending clears the persistence context, so this re-read sees PAID + paidAt.
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
@@ -304,9 +296,7 @@ public class OrderService {
         return toDetailResponse(order, orderItemRepository.findByOrderId(orderId));
     }
 
-    // =========================================================================
-    // Read
-    // =========================================================================
+    // ── Read ─────────────────────────────────────────────────────────────────
 
     public Page<OrderResponse> getMyOrders(Pageable pageable) {
         Long userId = securityUtils.resolveUserId();
@@ -323,16 +313,14 @@ public class OrderService {
         Long userId = securityUtils.resolveUserId();
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
-        // 404 (not 403) for non-owners — avoids leaking that the order exists
+        // 404, not 403, for non-owners so order existence isn't leaked.
         if (!isAdmin() && !order.getUserId().equals(userId)) {
             throw new ResourceNotFoundException("Order not found: " + orderId);
         }
         return toDetailResponse(order, orderItemRepository.findByOrderId(orderId));
     }
 
-    // =========================================================================
-    // Helpers
-    // =========================================================================
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
     private boolean isAdmin() {
         return SecurityContextHolder.getContext().getAuthentication()
@@ -340,7 +328,7 @@ public class OrderService {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 
-    /** List-view response — items not loaded (avoids N+1 on paginated lists). */
+    /** List-view response without items — avoids N+1 on paginated lists. */
     private OrderResponse toListResponse(Order order) {
         OrderResponse res = new OrderResponse();
         res.setId(order.getId());

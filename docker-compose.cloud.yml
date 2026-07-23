@@ -1,41 +1,18 @@
-# Trimmed compose stack for the first cloud deploy (Terraform Step 1, see
-# docs/DEVOPS_ROADMAP.md and docs/DEPLOY.md).
+# Cloud deploy stack. Differences from docker-compose.yml:
+#   - app/nginx images are pulled from GHCR (built by CI), not built here.
+#   - Middleware ports aren't published — containers talk over the internal
+#     network; only nginx :80 is exposed.
+#   - MySQL/MongoDB bind-mount /data/* on the persistent EBS volume so their
+#     data survives instance replacement (see infra/terraform/persistent/).
+#   - Memory is capped on every service, sized for a 4 GiB instance
+#     (c7i-flex.large). Keep instance_type in terraform.tfvars in sync.
 #
-# What's DIFFERENT from docker-compose.yml:
-#   - app image comes from GHCR (`image:`, not `build:`) — the instance never
-#     runs a Maven build, it just pulls what CI already published.
-#   - Kafka and MongoDB are INCLUDED (the first deploy trimmed them, which
-#     broke checkout: OrderService.initiateCheckout() only publishes a
-#     CheckoutRequestedEvent and returns 202 Accepted — the actual stock
-#     deduction and order creation happen in CheckoutRequestedConsumer, a
-#     Kafka listener. No broker = every checkout stuck PENDING forever.)
-#     Kafka runs single-node in KRaft mode (Kafka 3.x is its own controller,
-#     no ZooKeeper) with replication factor 1 — fine for one box, the
-#     opposite of a production cluster.
-#   - Middleware ports are NOT published to the host, unlike the dev compose
-#     file: containers reach each other by service name on the internal
-#     network, and an internet-facing box should expose nothing it doesn't
-#     have to (defense in depth behind the security group).
-#   - nginx is added in front, serving the built frontend and reverse-proxying
-#     /api to the app. It runs from the shophub-frontend image built by CI
-#     (Dockerfile.frontend: nginx + dist + infra/nginx/nginx.conf baked in),
-#     so the frontend deploys by image pull — no manual scp of frontend/dist.
-#   - MySQL and MongoDB bind-mount /data/* (a persistent EBS volume) instead
-#     of using Docker named volumes. Named volumes sit on the instance's root
-#     disk and die with the instance; this stack replaces its instance for
-#     something as routine as a new AMI, so that made every rebuild a data
-#     loss event. See infra/terraform/persistent/.
-#   - Memory is capped everywhere on purpose. Sized for a 4 GiB instance
-#     (c7i-flex.large): app ~700M + MySQL ~500M + Kafka ~400M + Mongo ~350M
-#     + Redis ~150M + nginx, leaving headroom for the OS and page cache.
-#     Does NOT fit in a t3.small — keep instance_type in terraform.tfvars in
-#     sync with this file.
+# Kafka is required: checkout is async (initiateCheckout publishes a
+# CheckoutRequestedEvent; CheckoutRequestedConsumer does the work), so with no
+# broker every checkout hangs PENDING.
 #
-# Secrets (MYSQL_ROOT_PASSWORD, JWT_SECRET) are NOT hardcoded here — they are
-# read from a .env file placed next to this compose file at deploy time by
-# Terraform's user-data script (infra/terraform/user_data.sh.tpl), sourced
-# from terraform.tfvars. That keeps them out of this file (which is tracked
-# in git) — see the "Secrets management" gap in docs/DEVOPS_ROADMAP.md.
+# Secrets (MYSQL_ROOT_PASSWORD, JWT_SECRET) are read from a .env written next to
+# this file at deploy time by infra/terraform/user_data.sh.tpl — never hardcoded.
 
 services:
 
@@ -52,9 +29,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/flash_sale_logs
       JWT_SECRET: ${JWT_SECRET}
-      # Cap the JVM heap explicitly instead of letting it default to 25% of
-      # container memory (fine on a normal host, too generous with five
-      # other processes sharing a 4 GiB box).
+      # Explicit heap cap — the 25%-of-container default is too generous with
+      # five other processes on a 4 GiB box.
       JAVA_TOOL_OPTIONS: "-Xmx512m"
     depends_on:
       mysql:
@@ -64,7 +40,7 @@ services:
       mongodb:
         condition: service_healthy
       kafka:
-        condition: service_started   # Kafka has no simple health-check command
+        condition: service_started   # no simple health-check for Kafka
 
   mysql:
     image: mysql:8
@@ -72,28 +48,22 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: flash_sale_db
-    # innodb-buffer-pool-size defaults to 128MB anyway on modest hosts, but
-    # setting it explicitly documents the budget instead of leaving it to
-    # MySQL's auto-sizing heuristics.
+    # Pin the buffer pool to document the memory budget explicitly.
     command: --innodb-buffer-pool-size=128M
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
-    # Bind mount onto the persistent EBS volume, NOT a Docker named volume.
-    # Named volumes live under /var/lib/docker/volumes on the instance's root
-    # disk, which is deleted when the instance is replaced — and this stack
-    # replaces its instance readily (a new AL2023 AMI or an edited boot script
-    # is enough). $DATA_DIR is /data, an EBS volume owned by a separate
-    # Terraform state so it outlives the box. See infra/terraform/persistent/.
+    # Bind-mount the persistent EBS volume ($DATA_DIR=/data), not a named volume,
+    # so data survives instance replacement. See infra/terraform/persistent/.
     volumes:
       - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
 
   redis:
     image: redis:7
     restart: unless-stopped
-    # Small, bounded cache — this box isn't sized to let Redis grow unchecked.
+    # Bounded cache with LRU eviction.
     command: --maxmemory 128mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -101,12 +71,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # Lifted from the dev compose file (a proven-working single-node KRaft
-  # config), with three deploy-environment changes: no published port, a
-  # restart policy, and a capped heap. One deliberate fix: the controller
-  # quorum voter address uses the service name instead of dev's `localhost`
-  # (same effect single-node, but correct if this ever splits into
-  # broker+controller containers).
+  # Single-node KRaft (no ZooKeeper), replication factor 1. Quorum voter uses the
+  # service name so it stays correct if broker/controller are ever split out.
   kafka:
     image: apache/kafka:3.7.0
     restart: unless-stopped
@@ -120,18 +86,15 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      # Kafka's default 1 GiB heap is cluster-sized; a single-node broker
-      # moving this app's event volume is comfortable in a quarter of that.
+      # Default 1 GiB heap is cluster-sized; 256m is plenty single-node.
       KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"
-    # No volume: in-flight events are transient by design here — MySQL is
-    # the source of truth, and a broker restart losing queued checkout
-    # events is acceptable on a learning box.
+    # No volume — MySQL is the source of truth, so losing queued events on a
+    # broker restart is acceptable here.
 
   mongodb:
     image: mongo:6
     restart: unless-stopped
-    # WiredTiger's default cache is ~50% of RAM — fine on a dedicated DB
-    # host, greedy here. 0.25 GiB is plenty for activity logs.
+    # Cap WiredTiger cache (default ~50% of RAM); 0.25 GiB suffices for logs.
     command: --wiredTigerCacheSizeGB 0.25
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
@@ -141,10 +104,8 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/mongo:/data/db
 
-  # The frontend image (see Dockerfile.frontend) is nginx with the built
-  # frontend AND nginx.conf baked in — pulled from GHCR like the app image,
-  # instead of bind-mounting files that had to be scp'd to the host first.
-  # Changing nginx.conf now means a CI rebuild, not an edit on the box.
+  # nginx image with the built frontend and nginx.conf baked in
+  # (Dockerfile.frontend) — nginx.conf changes ship via a CI rebuild.
   nginx:
     image: ${FRONTEND_IMAGE:-ghcr.io/averyhinazuki/shophub-frontend:latest}
     restart: unless-stopped
@@ -153,6 +114,5 @@ services:
     depends_on:
       - app
 
-# No top-level `volumes:` block any more. Both stateful services bind-mount
-# subdirectories of the EBS volume mounted at /data instead, so their data is
-# owned by the disk rather than by the Docker daemon on a disposable host.
+# No named volumes — both stateful services bind-mount subdirectories of the
+# EBS volume at /data.

@@ -1,28 +1,16 @@
 # ── Persistent (stateful) layer ─────────────────────────────────────────────
-# This is a SEPARATE Terraform configuration with its OWN state file, and that
-# separation is the entire point of the directory.
+# A separate Terraform configuration with its own state file. The app stack in
+# ../ is disposable (AMI moves, user_data changes replace the instance); the
+# data must not be. Keeping the volume and EIP in a state the app stack can't
+# reach means `terraform destroy` there cannot touch them. The app stack reads
+# these via `data` blocks and attaches them.
 #
-# The app stack in ../ is disposable by design: `ami` moves whenever AWS
-# publishes a new AL2023, and `user_data_replace_on_change = true` means
-# editing the boot script replaces the instance. That is fine — a web server
-# should be cattle. But the DATABASE lived on that instance's root EBS volume,
-# so "replace the box" and "delete the database" were the same operation.
-#
-# Terraform can only destroy what it tracks. Keeping the data volume in a
-# different state file means `terraform destroy` in ../ physically cannot
-# touch it — no `prevent_destroy` flag to remember, no error to work around,
-# no temptation to delete the guardrail when it gets in the way. The app stack
-# finds this volume with a `data` block (read-only) and attaches it.
-#
-# This is the standard "split stateful from stateless" layering. Real teams do
-# the same thing at larger scale: a rarely-touched foundation/bootstrap state
-# (VPC, IAM, RDS, DNS zones) that changes a few times a year, and per-service
-# states that deploy many times a day.
+# Standard "split stateful from stateless" layering — a rarely-changed
+# foundation state plus a frequently-deployed app state.
 #
 #   cd infra/terraform/persistent && terraform init && terraform apply
 #
-# You should need to run this approximately once. If you find yourself running
-# it often, something belongs in the app stack instead.
+# Applied rarely; if you run it often, something belongs in the app stack.
 
 terraform {
   required_version = ">= 1.5"
@@ -40,38 +28,26 @@ provider "aws" {
 }
 
 variable "aws_region" {
-  description = "Must match the app stack's region — an EBS volume can only attach to an instance in its own region and AZ."
+  description = "Must match the app stack's region — an EBS volume attaches only within its own region and AZ."
   type        = string
   default     = "us-east-1"
 }
 
 variable "volume_size" {
   description = <<-EOT
-    Size of the data volume in GiB. 10 GiB is ample for this project's MySQL +
-    MongoDB footprint and costs about $0.80/month at gp3 pricing.
-
-    Note that you pay for an EBS volume whether or not it is attached to a
-    running instance — exactly like the Elastic IP. That standing charge is
-    the price of the data outliving the instance; if that is not a trade you
-    want, the alternative is scheduled mysqldump-to-S3 and accepting a manual
-    restore.
-
-    GROWING this value is an in-place update (the filesystem still needs
-    `growpart`/`resize2fs` on the box afterwards). SHRINKING it forces
-    replacement, which destroys the data — Terraform will tell you it plans to
-    replace, so read the plan.
+    Data volume size in GiB. 10 GiB is ample for MySQL + MongoDB here (~$0.80/mo
+    at gp3). Billed whether or not attached. Growing is in-place (then
+    growpart/resize2fs on the box); shrinking forces replacement and destroys
+    the data — read the plan.
   EOT
   type        = number
   default     = 10
 }
 
 # ── Placement ───────────────────────────────────────────────────────────────
-# An EBS volume is pinned to a single Availability Zone and can only attach to
-# an instance in that same AZ. The app stack resolves its subnet FROM this
-# volume's AZ (see ../main.tf), so the dependency runs one way only: this
-# layer picks the AZ, the app stack follows it. That ordering is deliberate —
-# the stateful thing cannot move, so it gets to decide.
-
+# An EBS volume is pinned to one AZ. The app stack derives its subnet from this
+# volume's AZ (../main.tf), so the stateful layer picks the AZ and the app stack
+# follows.
 data "aws_vpc" "default" {
   default = true
 }
@@ -83,21 +59,20 @@ data "aws_subnets" "default" {
   }
 }
 
-# Same deterministic pick the app stack used before this split existed, so
-# creating the volume does not relocate an already-running instance.
+# Same deterministic pick the app stack used before the split, so creating the
+# volume doesn't relocate a running instance.
 data "aws_subnet" "chosen" {
   id = sort(data.aws_subnets.default.ids)[0]
 }
 
-# ── The volume ──────────────────────────────────────────────────────────────
+# ── Data volume ─────────────────────────────────────────────────────────────
 resource "aws_ebs_volume" "data" {
   availability_zone = data.aws_subnet.chosen.availability_zone
   size              = var.volume_size
   type              = "gp3"
 
-  # Encryption at rest, using the account's default EBS KMS key. Free, and it
-  # cannot be turned on later without recreating the volume — so it goes on
-  # now, while the volume is still empty.
+  # Encryption at rest (default EBS KMS key). Free, and cannot be enabled later
+  # without recreating the volume — so on now, while empty.
   encrypted = true
 
   tags = {
@@ -105,35 +80,22 @@ resource "aws_ebs_volume" "data" {
     Project = "shophub"
   }
 
-  # Belt as well as braces. The state separation is the real protection; this
-  # catches the case where someone runs `terraform destroy` from INSIDE this
-  # directory, which the separation alone does nothing to prevent.
-  #
-  # To genuinely retire the volume: delete this block, apply, then destroy.
+  # Guards against a `terraform destroy` run from inside this directory, which
+  # the state separation alone doesn't prevent. To retire: delete this block,
+  # apply, then destroy.
   lifecycle {
     prevent_destroy = true
   }
 }
 
 # ── Elastic IP ──────────────────────────────────────────────────────────────
-# Lives here for the same reason the volume does: it is an identity that
-# should outlive the machine holding it. When this was in the app stack,
-# `terraform destroy` released 52.4.114.4 back to AWS's pool and the next
-# apply came back on a different address — so every teardown invalidated
-# bookmarks, the README, and any DNS record pointing at it.
+# Lives here so teardown of the app stack doesn't release the address (which
+# would change the IP and invalidate the README/DNS). The app stack attaches it
+# with an aws_eip_association.
 #
-# The app stack now attaches it with an aws_eip_association, which is the
-# disposable half of the relationship. Same split as the volume: the app
-# stack owns the attachment, this layer owns the thing being attached.
-#
-# COST NOTE, because it is not free and the trade-off is real: AWS bills every
-# public IPv4 address at $0.005/hour whether or not it is attached to a
-# running instance. While the stack is up that is a wash — you pay it either
-# way. The difference shows up when you tear the stack down to stop paying
-# for it: the address keeps billing at roughly $3.60/month for as long as you
-# hold it. That is the price of the address being stable. If you would rather
-# not pay it, delete this resource, move it back to ../main.tf as a plain
-# `aws_eip`, and accept a new IP after every destroy.
+# Cost: AWS bills every public IPv4 at $0.005/hr (~$3.60/mo) whether attached or
+# not — the standing price of a stable address. To avoid it, move this back to
+# ../main.tf as a plain aws_eip and accept a new IP after every destroy.
 resource "aws_eip" "shophub" {
   domain = "vpc"
 
@@ -148,7 +110,7 @@ resource "aws_eip" "shophub" {
 }
 
 output "volume_id" {
-  description = "Referenced by the app stack via a tag-filtered data source, not by this ID — printed for console lookups and manual snapshots."
+  description = "Referenced by the app stack via tag, not this ID — printed for console lookups and snapshots."
   value       = aws_ebs_volume.data.id
 }
 

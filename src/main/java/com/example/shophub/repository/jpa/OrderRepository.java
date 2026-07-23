@@ -16,21 +16,20 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Page<Order> findByUserId(Long userId, Pageable pageable);
 
-    // Fetch IDs of PENDING orders older than the given cutoff (for expiry job)
+    // IDs of PENDING orders older than the cutoff, for the expiry job.
     @Query("SELECT o.id FROM Order o WHERE o.status = :status AND o.createdAt < :before")
     List<Long> findExpiredOrderIds(OrderStatus status, LocalDateTime before, Pageable pageable);
 
-    // Race-safe cancellation: returns 1 if we claimed it, 0 if already paid/cancelled.
-    // @Transactional required so this can be called from a non-transactional context
-    // (e.g. OrderExpiryScheduler) and still commit atomically.
-    // clearAutomatically = true so findById after this UPDATE sees the new status.
+    // Race-safe cancel: 1 if claimed, 0 if already paid/cancelled. @Transactional so
+    // callers without an outer tx (OrderExpiryScheduler) still commit atomically;
+    // clearAutomatically so a following findById sees the new status.
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Order o SET o.status = 'CANCELLED' WHERE o.id = :id AND o.status = 'PENDING'")
     int cancelIfPending(Long id);
 
-    // Race-safe payment: returns 1 if we claimed it, 0 if already expired/cancelled
-    // clearAutomatically = true so findById after this UPDATE sees PAID + paidAt
+    // Race-safe pay: 1 if claimed, 0 if already expired/cancelled. clearAutomatically
+    // so a following findById sees PAID + paidAt.
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Order o SET o.status = 'PAID', o.paidAt = :now WHERE o.id = :id AND o.status = 'PENDING'")

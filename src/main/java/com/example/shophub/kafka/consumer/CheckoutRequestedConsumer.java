@@ -23,14 +23,12 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * Processes checkout-requested events published by OrderService.initiateCheckout().
- * Runs the stock-deduction + order-creation logic asynchronously and writes the
- * result (SUCCESS or FAILED) to Redis so clients can poll for it.
+ * Consumes checkout-requested events, runs stock deduction and order creation,
+ * and writes the SUCCESS/FAILED result to Redis for the client to poll.
  *
- * Idempotency: duplicate deliveries (same checkoutId key) are skipped via Redis dedup.
- * SoldOutException: terminal — writes FAILED to Redis, does NOT rethrow (no retry desired).
- * Other exceptions: rethrown so @RetryableTopic retries up to 3 times with exponential backoff.
- * After retry exhaustion: @DltHandler fires and writes FAILED to Redis.
+ * Duplicate deliveries are skipped via the Redis dedup guard. SoldOutException is
+ * terminal — FAILED written, not rethrown. Other exceptions propagate to
+ * @RetryableTopic (exponential backoff); on exhaustion @DltHandler writes FAILED.
  */
 @Slf4j
 @Component
@@ -74,9 +72,8 @@ public class CheckoutRequestedConsumer {
                     .status("SUCCESS")
                     .orderId(order.getId())
                     .build());
-            // Swallow dedup-write failure: status was already written to Redis and the cart
-            // is now cleared, so a retry would only create "cart empty" failures → DLT.
-            // Better to commit the offset here than trigger a pointless retry chain.
+            // Status is written and the cart is cleared, so a retry would only fail
+            // on an empty cart — mark processed and let the offset commit.
             safeMarkProcessed(key);
             log.info("[Kafka][checkout-requested] checkoutId={} → orderId={}",
                     event.getCheckoutId(), order.getId());
@@ -92,7 +89,7 @@ public class CheckoutRequestedConsumer {
             safeMarkProcessed(key);
 
         } catch (Exception e) {
-            // Transient failure (DB unavailable, lock timeout) — rethrow for @RetryableTopic
+            // Transient failure (DB down, lock timeout) — rethrow to retry.
             log.error("[Kafka][checkout-requested] Error for checkoutId={}: {}",
                     event.getCheckoutId(), e.getMessage());
             throw e;
@@ -104,8 +101,8 @@ public class CheckoutRequestedConsumer {
         log.error("[Kafka][DLT] Retries exhausted on topic={}: {}", topic, message);
         try {
             CheckoutRequestedEvent event = objectMapper.readValue(message, CheckoutRequestedEvent.class);
-            // Guard: a rare Redis blip between writeStatus(SUCCESS) and markProcessed could
-            // cause this DLT delivery. Do not overwrite a SUCCESS with FAILED.
+            // Don't overwrite a SUCCESS with FAILED — a Redis blip between
+            // writeStatus and markProcessed can still route a succeeded item here.
             String existing = redisTemplate.opsForValue().get("checkout:" + event.getCheckoutId());
             if (existing != null) {
                 try {

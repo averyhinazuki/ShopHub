@@ -11,11 +11,8 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
     List<OrderItem> findByOrderId(Long orderId);
 
     /**
-     * Returns [productId, quantity] pairs for all items in an order.
-     *
-     * Used by OrderExpiryScheduler to restore stock without triggering lazy
-     * loading of the Product entity. Fetching only the FK value (product.id)
-     * via JPQL avoids a LazyInitializationException when called outside a session.
+     * [productId, quantity] pairs for an order. Selecting the FK directly avoids
+     * lazy-loading Product, so OrderExpiryScheduler can call it outside a session.
      */
     @Query("SELECT oi.product.id, oi.quantity FROM OrderItem oi WHERE oi.order.id = :orderId")
     List<Object[]> findProductIdAndQuantityByOrderId(Long orderId);

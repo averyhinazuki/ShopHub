@@ -11,15 +11,12 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Bridges in-process Spring domain events → Kafka topics AFTER the DB transaction commits.
+ * Forwards in-process domain events to Kafka only after the DB transaction
+ * commits (AFTER_COMMIT), so a rolled-back transaction never emits an event for
+ * state that didn't persist.
  *
- * Why @TransactionalEventListener(AFTER_COMMIT)?
- *   Publishing to Kafka inside a transaction risks sending an event for a state that never
- *   persisted (if the transaction rolls back). AFTER_COMMIT guarantees the DB write is
- *   durable before any downstream system is notified.
- *
- *   Residual gap: if the JVM crashes between commit and the Kafka send, the event is lost.
- *   The production fix is the transactional outbox pattern.
+ * Residual gap: a JVM crash between commit and send loses the event — the
+ * transactional outbox pattern closes it.
  */
 @Slf4j
 @Component

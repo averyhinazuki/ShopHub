@@ -5,28 +5,20 @@ on:
     branches: [ main, dev ]
   pull_request:
     branches: [ main, dev ]
-  # Manual escape hatch. The path filters below deliberately do NOT treat a
-  # change to this workflow as a reason to rebuild the images, so when a build
-  # step itself changes (cache scope, tags, buildx setup) there may be no code
-  # change to piggyback on — trigger a run by hand instead.
+  # Manual trigger — needed because a change to this workflow alone doesn't
+  # match the path filters below and so triggers no build.
   workflow_dispatch:
 
 jobs:
-  # ── What changed? ─────────────────────────────────────────────────────────
-  # Classifies the push so downstream jobs can skip work that can't possibly
-  # be affected (a favicon change doesn't need the Maven test suite, and —
-  # more importantly — not rebuilding the backend image means the app
-  # container isn't needlessly recreated on deploy).
+  # Classify the push so downstream jobs skip unaffected work (and, notably,
+  # avoid recreating the app container when the backend image is unchanged).
   changes:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read   # lets paths-filter read changed files on PR events
-    # On workflow_dispatch there is no diff to compute: paths-filter would
-    # default `base` to the default branch and `ref` to HEAD, so dispatching
-    # from main compares main against main, finds an empty changeset, and
-    # reports NOTHING changed. A manual run would then skip every build while
-    # still reporting green — the worst possible failure mode for an escape
-    # hatch. A manual run means "build everything", so say so explicitly.
+      pull-requests: read   # lets paths-filter read changed files on PRs
+    # workflow_dispatch has no diff, so paths-filter would compare main against
+    # main and report nothing changed — skipping every build while reporting
+    # green. Force both to true for a manual run ("build everything").
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.backend }}
       frontend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend }}
@@ -37,20 +29,10 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         with:
           filters: |
-            # Paths that genuinely change BOTH images' contents. The test is
-            # narrow on purpose: "does editing this file change what ends up
-            # inside an image?" — not "is this file vaguely build-related".
-            #
-            # .dockerignore qualifies because both builds use `context: .`, so
-            # it decides what each build context contains.
-            #
-            # Two files were deliberately REMOVED from this list:
-            #   - this workflow — it orchestrates builds but is not an input to
-            #     them; see workflow_dispatch above for the manual override.
-            #   - docker-compose.cloud.yml — it is not an image input either,
-            #     and CI never ships it: the instance's copy is written by
-            #     cloud-init from Terraform's templatefile() (user_data.sh.tpl),
-            #     so editing it requires `terraform apply`, not a rebuild.
+            # Only paths that change an image's contents. `.dockerignore` counts
+            # because both builds use context: `.`. This workflow and
+            # docker-compose.cloud.yml are excluded — neither is an image input
+            # (the compose file ships via terraform apply, not CI).
             shared: &shared
               - '.dockerignore'
             backend:
@@ -131,10 +113,8 @@ jobs:
       - name: Run tests
         run: mvn test --no-transfer-progress
 
-  # Backend and frontend publish as SEPARATE jobs so each can be skipped
-  # independently. If a job is skipped, everything that `needs` it is skipped
-  # too (unless it opts out, like deploy below) — that's why publish-backend
-  # depending on a skipped test job does the right thing for free.
+  # Separate publish jobs so each image can be skipped independently; a skipped
+  # job also skips whatever `needs` it (except deploy, which opts out).
   publish-backend:
     name: Build & push backend image
     runs-on: ubuntu-latest
@@ -148,10 +128,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The gha cache backend needs BuildKit's docker-container driver;
-      # runners default to the plain docker driver, which can't export cache
-      # ("Cache export is not supported for the docker driver"). This step
-      # creates a properly-drivered builder that build-push-action picks up.
+      # gha cache export needs BuildKit's docker-container driver, which the
+      # runner's default docker driver can't do.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -160,7 +138,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}  # auto-injected, no setup needed
+          password: ${{ secrets.GITHUB_TOKEN }}  # auto-injected
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -170,19 +148,12 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/shophub:latest
             ghcr.io/${{ github.repository_owner }}/shophub:${{ github.sha }}
-          # Persist Docker layer cache in GitHub's cache backend so unchanged
-          # layers (Maven dependency download, especially) are reused across
-          # runs — runners are throwaway VMs with no local cache. mode=max
-          # also caches intermediate build-stage layers, not just the final
-          # image's. `scope` keeps the two images' caches from evicting each
-          # other.
+          # Reuse unchanged layers (Maven deps) across throwaway runners.
+          # mode=max caches intermediate stages; scope isolates the two images.
           cache-from: type=gha,scope=backend
           cache-to: type=gha,scope=backend,mode=max
 
-  # Frontend ships as its own image (nginx + built dist + nginx.conf baked
-  # in) so the instance can pull it from GHCR like the backend — no more
-  # building locally and scp'ing frontend/dist to the box. Note: does NOT
-  # need the Java test job — only the `changes` classification.
+  # Frontend image (nginx + dist + nginx.conf). Independent of the test job.
   publish-frontend:
     name: Build & push frontend image
     runs-on: ubuntu-latest
@@ -222,46 +193,34 @@ jobs:
     name: Deploy to EC2 via SSM
     runs-on: ubuntu-latest
     needs: [ publish-backend, publish-frontend ]
-    # Either publish job may be legitimately skipped, and skipped `needs`
-    # normally skip this job too — `!cancelled()` opts out of that. The rest
-    # says: on main, at least one image was published, and nothing failed.
+    # !cancelled() runs deploy even when a publish job was skipped; the rest
+    # requires main, at least one success, and no failure.
     if: >-
       ${{ !cancelled() &&
           github.ref == 'refs/heads/main' &&
           contains(needs.*.result, 'success') &&
           !contains(needs.*.result, 'failure') }}
 
-    # `id-token: write` lets this job ask GitHub for a signed OIDC token to
-    # present to AWS. Without it the assume-role step fails with "Credentials
-    # could not be loaded" — and note that naming ANY permission resets all
-    # the others to none, which is why `contents: read` has to be restated.
+    # id-token: write is required to mint the OIDC token; naming any permission
+    # resets the rest, so contents: read must be restated.
     permissions:
       id-token: write
       contents: read
 
     steps:
-      # No access keys. GitHub mints a short-lived token describing this
-      # workflow run, AWS validates it against the trust policy on
-      # shophub-ci (see infra/terraform/iam.tf) and hands back ~1-hour
-      # credentials. The role can only send the run-shell-script SSM document
-      # to instances tagged Name=shophub — nothing else — and only this repo's
-      # main branch can assume it at all.
-      #
-      # AWS_ROLE_ARN is a repo secret purely to keep the account ID out of a
-      # public repo; it isn't secret in the cryptographic sense — the trust
-      # policy, not obscurity, is what stops anyone else using it.
+      # OIDC, no access keys: AWS validates the token against the shophub-ci
+      # trust policy (infra/terraform/iam.tf) and returns ~1h credentials scoped
+      # to SendCommand on instances tagged Name=shophub. AWS_ROLE_ARN is a repo
+      # secret only to keep the account ID out of a public repo.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
-      # No SSH, no host IP secret: the instance is found by tag (survives
-      # destroy/re-apply, unlike IDs and IPs), and the command is relayed by
-      # Systems Manager to the SSM agent already running on the box.
-      # `docker compose up -d` only recreates containers whose image actually
-      # changed, so a frontend-only deploy leaves the app (and its JVM warmup)
-      # alone.
+      # No SSH: find the instance by tag and relay the command via SSM.
+      # `docker compose up -d` only recreates containers whose image changed, so
+      # a frontend-only deploy leaves the app untouched.
       - name: Pull images and restart the stack
         run: |
           set -euo pipefail
@@ -283,8 +242,7 @@ jobs:
             --parameters 'commands=["cd /opt/shophub && docker compose -f docker-compose.cloud.yml --env-file .env pull -q && docker compose -f docker-compose.cloud.yml --env-file .env up -d"]' \
             --query "Command.CommandId" --output text)
 
-          # Poll until the command reaches a terminal state. (aws ssm wait
-          # gives up after ~100s; an image pull can take longer.)
+          # Poll to a terminal state (`aws ssm wait` caps at ~100s; pulls run longer).
           for _ in $(seq 1 60); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
@@ -295,8 +253,7 @@ jobs:
             sleep 10
           done
 
-          # Surface the box's own stdout/stderr in the Actions log, then
-          # fail the job unless the command actually succeeded.
+          # Surface the box's stdout/stderr, then fail unless the command succeeded.
           aws ssm get-command-invocation \
             --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
             --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \

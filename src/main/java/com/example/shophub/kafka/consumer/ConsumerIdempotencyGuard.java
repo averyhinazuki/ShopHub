@@ -7,15 +7,12 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * Redis-backed dedup guard for Kafka consumers.
+ * Redis-backed dedup guard for Kafka consumers. Keys are
+ * kafka:processed:{topic}:{messageKey} with a 24h TTL (outlasts any retry window).
  *
- * Key pattern: kafka:processed:{topic}:{messageKey}
- * TTL: 24h — long enough to outlast any realistic retry window.
- *
- * Consumers call isAlreadyProcessed() at the top of their handler and
- * markProcessed() only after successfully completing all side effects.
- * Marking after success means a mid-processing crash will be retried
- * (at-least-once), not silently skipped.
+ * Consumers check isAlreadyProcessed() first and call markProcessed() only after
+ * all side effects succeed, so a mid-processing crash is retried (at-least-once)
+ * rather than silently dropped.
  */
 @Component
 @RequiredArgsConstructor

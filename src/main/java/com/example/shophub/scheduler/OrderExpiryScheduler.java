@@ -22,18 +22,15 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Scans for PENDING orders older than {@code app.order.pending-timeout-minutes} and
- * cancels them, restoring their stock — so abandoned carts don't hold stock forever.
+ * Cancels PENDING orders older than {@code app.order.pending-timeout-minutes} and
+ * restores their stock, so abandoned checkouts don't hold stock indefinitely.
  *
- * Race guard:
- *   {@code cancelIfPending} is a conditional UPDATE:
- *     UPDATE orders SET status = 'CANCELLED' WHERE id = ? AND status = 'PENDING'
- *   If /pay wins first → rowsAffected = 0 → scheduler skips; stock stays deducted (correct).
- *   If scheduler wins first → /pay later gets rowsAffected = 0 → 409 to the user (correct).
- *   Exactly one of the two commits; never both.
+ * {@code cancelIfPending} is a conditional UPDATE guarded on status = 'PENDING',
+ * so it and /pay can never both win: whichever commits first leaves the other
+ * with rows=0 (scheduler skips, or /pay returns 409).
  *
- * Stock restoration uses the SAME Redisson lock as checkout and admin inventory PATCH
- * (lock:product:{id}) so it cannot race with a concurrent checkout on the same product.
+ * Restoration takes the same lock:product:{id} Redisson lock as checkout and the
+ * admin inventory PATCH, so it cannot race a concurrent checkout on that product.
  */
 @Slf4j
 @Component
@@ -54,11 +51,8 @@ public class OrderExpiryScheduler {
     private final OrderActivityLogRepository activityLogRepository;
 
     /**
-     * Runs every {@code app.order.expiry-job-interval-seconds} seconds (fixed delay —
-     * next run starts after the current run finishes, preventing overlapping executions).
-     *
-     * Initial delay of 30 s gives the application time to fully start before
-     * the first scan.
+     * Fixed-delay scan (no overlap between runs), every
+     * {@code app.order.expiry-job-interval-seconds} seconds, after a 30s startup delay.
      */
     @Scheduled(
         fixedDelayString  = "#{${app.order.expiry-job-interval-seconds} * 1000}",
@@ -71,7 +65,7 @@ public class OrderExpiryScheduler {
                 OrderStatus.PENDING, cutoff, PageRequest.of(0, batchSize));
 
         if (expiredIds.isEmpty()) {
-            return; // nothing to do — skip noisy log
+            return;
         }
 
         log.info("[Expiry] Found {} expired PENDING order(s) — processing", expiredIds.size());
@@ -80,7 +74,7 @@ public class OrderExpiryScheduler {
             try {
                 processSingleOrder(orderId);
             } catch (Exception e) {
-                // One bad order must never abort the whole batch
+                // Isolate failures so one bad order doesn't abort the batch.
                 log.error("[Expiry] Failed to process orderId={}: {}", orderId, e.getMessage());
             }
         }
@@ -89,11 +83,9 @@ public class OrderExpiryScheduler {
     // ── Per-order logic ───────────────────────────────────────────────────────
 
     private void processSingleOrder(Long orderId) {
-
-        // cancelIfPending commits immediately; rows=0 means /pay already won.
+        // rows=0 means /pay already committed; the stock was legitimately sold.
         int rows = orderRepository.cancelIfPending(orderId);
         if (rows == 0) {
-            // /pay already committed — do nothing; stock was legitimately sold.
             log.debug("[Expiry] orderId={} already paid or cancelled — skipping", orderId);
             return;
         }
@@ -104,7 +96,7 @@ public class OrderExpiryScheduler {
                 .map(Order::getUserId)
                 .orElse(null);
 
-        // Projection query avoids lazy-loading the full Product entity
+        // Projection avoids lazy-loading full Product entities.
         List<Object[]> items = orderItemRepository.findProductIdAndQuantityByOrderId(orderId);
 
         for (Object[] row : items) {
@@ -114,7 +106,7 @@ public class OrderExpiryScheduler {
             restoreStockForItem(orderId, productId, qty);
         }
 
-        // Best-effort activity log — failure must never abort the expiry job
+        // Best-effort activity log — a failure here must not abort the job.
         try {
             OrderActivityLog entry = new OrderActivityLog();
             entry.setOrderId(orderId);
@@ -128,13 +120,11 @@ public class OrderExpiryScheduler {
     }
 
     /**
-     * Acquires the per-product Redisson lock (same key used by checkout and admin PATCH),
-     * performs cache-aside invalidation, restores stock in MySQL, then schedules the
-     * async second cache deletion.
+     * Under lock:product:{id} (shared with checkout and the admin PATCH), evicts the
+     * cache, restores stock in MySQL, and schedules the async second deletion.
      *
-     * If the lock cannot be acquired (e.g. a checkout is in progress), logs a warning
-     * and skips — the stock for this item is not restored. In production this would be
-     * addressed by a retry queue; acceptable for this build.
+     * If the lock can't be acquired the item is skipped and its stock is not
+     * restored — a retry queue would close this gap; left out here by design.
      */
     private void restoreStockForItem(Long orderId, Long productId, int qty) {
         RLock lock = redissonClient.getLock("lock:product:" + productId);
@@ -146,15 +136,11 @@ public class OrderExpiryScheduler {
                 return;
             }
 
-            // First cache deletion — before the MySQL write
-            cacheService.deleteCache(productId);
-
+            cacheService.deleteCache(productId); // first deletion, before the write
             inventoryRepository.restoreStock(productId, qty);
-
             lock.unlock();
 
-            // Async second deletion — kills any stale entry re-cached by a reader
-            // in the window between the first deletion and the MySQL commit
+            // Second deletion clears anything a reader re-cached during the write.
             cacheService.scheduleSecondDeletion(productId);
 
             log.debug("[Expiry] Restored productId={} qty={} for orderId={}", productId, qty, orderId);

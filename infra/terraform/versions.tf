@@ -1,6 +1,4 @@
-# Pin the Terraform CLI and provider versions so `terraform init` gives you
-# the same behavior today as it will in six months. Without this, a provider
-# major-version bump could silently change resource schemas out from under you.
+# Pin Terraform CLI and provider versions for reproducible `terraform init`.
 terraform {
   required_version = ">= 1.5"
 

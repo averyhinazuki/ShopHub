@@ -33,9 +33,8 @@ public class ProductService {
     // ── Reads (public) ──────────────────────────────────────────────────────
 
     /**
-     * Paginated product listing — only ACTIVE products.
-     * Filters: ?category={id}  or  ?search={name fragment}
-     * Cache not applied on list queries (only on single detail).
+     * Paginated listing of ACTIVE products, optionally filtered by category id or
+     * name fragment. Not cached — caching applies to single-product detail only.
      */
     public Page<ProductResponse> listProducts(Long categoryId, String search, Pageable pageable) {
         if (categoryId != null) {
@@ -54,12 +53,8 @@ public class ProductService {
     }
 
     /**
-     * Single product detail + live stock.
-     *
-     * Cache-aside read:
-     *   1. Check product:{id}:detail in Redis
-     *   2. HIT  → return cached value
-     *   3. MISS → read MySQL → populate Redis (TTL 60s) → return
+     * Single product detail with live stock. Cache-aside: return the Redis value
+     * on a hit, otherwise read MySQL, populate Redis (TTL 60s), and return.
      */
     public ProductResponse getProduct(Long id) {
         ProductResponse cached = cacheService.getDetail(id);
@@ -67,7 +62,7 @@ public class ProductService {
             log.debug("[Cache] HIT product:{}", id);
             return cached;
         }
-        log.debug("[Cache] MISS product:{} — loading from MySQL", id);
+        log.debug("[Cache] MISS product:{}", id);
         Product product = findActiveOrThrow(id);
         ProductInventory inv = inventoryRepository.findByProductId(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for product: " + id));
@@ -78,10 +73,8 @@ public class ProductService {
 
     // ── Admin writes ────────────────────────────────────────────────────────
 
-    /**
-     * Creates product + inventory row in a single transaction.
-     * A product never exists without an inventory record.
-     */
+    /** Creates the product and its inventory row in one transaction — a product
+     *  never exists without an inventory record. */
     @Transactional
     public ProductResponse createProduct(CreateProductRequest request) {
         Category category = categoryService.findEntityById(request.getCategoryId());
@@ -107,9 +100,8 @@ public class ProductService {
 
     /**
      * Updates catalog fields only (name, price, description, imageUrl, status).
-     * status=INACTIVE soft-deletes: product disappears from listings but
-     * stays in order_items history.
-     * Invalidates product:{id}:detail cache (no stock change so :stock stays valid).
+     * status=INACTIVE soft-deletes: hidden from listings but retained in
+     * order_items history. Invalidates the detail cache; :stock is untouched.
      */
     @Transactional
     public ProductResponse updateProduct(Long id, UpdateProductRequest request) {
@@ -125,7 +117,6 @@ public class ProductService {
         }
         productRepository.save(product);
 
-        // Catalog-only update: only detail cache needs invalidation, not :stock
         cacheService.deleteCache(id);
         cacheService.scheduleSecondDeletion(id);
 
@@ -134,17 +125,9 @@ public class ProductService {
     }
 
     /**
-     * Admin inventory adjustment.
-     *
-     * delta > 0 → restock  (totalStock + delta, availableStock + delta)
-     * delta < 0 → correction / damaged  (availableStock + delta only)
-     *
-     * Write path:
-     *   1. Acquire lock:product:{id}   (same lock as checkout — serializes all writers)
-     *   2. Delete product:{id}:detail AND product:{id}:stock  ← first deletion
-     *   3. UPDATE product_inventory (MySQL)
-     *   4. Release lock
-     *   5. Schedule async second deletion ~500ms later
+     * Admin inventory adjustment. delta > 0 restocks (total + available); delta < 0
+     * is a correction against available only. Runs under lock:product:{id} — the
+     * same lock as checkout — with delayed double cache deletion around the write.
      */
     @Transactional
     public void adjustInventory(Long productId, InventoryAdjustRequest request) {
@@ -158,7 +141,7 @@ public class ProductService {
             boolean acquired = lock.tryLock(5, 10, TimeUnit.SECONDS);
             if (!acquired) throw new RuntimeException("Could not acquire lock for product: " + productId);
 
-            // Guard inside the lock — reads committed state, safe against concurrent checkouts
+            // Guard inside the lock so it reads committed state.
             if (delta < 0) {
                 ProductInventory inv = inventoryRepository.findByProductId(productId).orElseThrow();
                 if (inv.getAvailableStock() + delta < 0) {
@@ -168,9 +151,7 @@ public class ProductService {
                 }
             }
 
-            // First deletion — before the MySQL write
-            cacheService.deleteCache(productId);
-
+            cacheService.deleteCache(productId); // first deletion, before the write
             inventoryRepository.adjustStock(productId, delta);
             log.info("[Inventory] product:{} adjusted by delta={} reason={}", productId, delta, request.getReason());
 
@@ -181,7 +162,7 @@ public class ProductService {
             if (lock.isHeldByCurrentThread()) lock.unlock();
         }
 
-        // Second deletion runs ~500ms later on background thread (after lock released)
+        // Second deletion runs ~500ms later on a background thread.
         cacheService.scheduleSecondDeletion(productId);
     }
 
@@ -192,7 +173,7 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
     }
 
-    /** Used by list queries — inventory already joined via @EntityGraph, no extra query. */
+    /** For list queries — inventory is already joined via @EntityGraph. */
     private ProductResponse toResponseWithStock(Product product) {
         return toResponse(product, product.getInventory());
     }

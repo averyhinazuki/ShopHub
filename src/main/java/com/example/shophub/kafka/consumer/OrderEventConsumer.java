@@ -19,13 +19,12 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 
 /**
- * Consumes order-created and payment-completed events from Kafka and writes
- * OrderActivityLog documents to MongoDB for downstream audit/analytics.
+ * Consumes order-created and payment-completed events and writes OrderActivityLog
+ * documents to MongoDB for audit/analytics.
  *
- * Idempotency: duplicate deliveries (same orderId key) are skipped via Redis dedup.
- * Malformed JSON: logged and skipped — no retry on poison pills.
- * Other exceptions propagate so @RetryableTopic retries up to 3 times with exponential backoff.
- * After retry exhaustion: @DltHandler fires and logs for manual inspection/alerting.
+ * Duplicates are skipped via the Redis dedup guard and malformed JSON is dropped
+ * (no retry on poison pills). Other exceptions propagate to @RetryableTopic;
+ * on exhaustion @DltHandler logs for manual inspection.
  */
 @Slf4j
 @Component
@@ -96,7 +95,6 @@ public class OrderEventConsumer {
 
     @DltHandler
     public void handleDlt(String message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
-        // Message exhausted all retries — log for manual inspection or alerting pipeline
         log.error("[Kafka][DLT] Retries exhausted on topic={} — manual intervention required: {}",
                 topic, message);
     }

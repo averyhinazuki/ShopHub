@@ -71,11 +71,26 @@ if (-not $Prometheus) {
 }
 Write-Host "Leave this window open. Ctrl-C to close the tunnel.`n" -ForegroundColor DarkGray
 
-# Parameters must be JSON; values are arrays of strings.
-$params = "{`"portNumber`":[`"$RemotePort`"],`"localPortNumber`":[`"$LocalPort`"]}"
+# --parameters must be JSON, but passing JSON inline is not portable: Windows
+# PowerShell 5.1 strips the double quotes when handing an argument to a native
+# .exe (the CLI then sees {portNumber:[3000]} and rejects it), while the
+# backslash-escaping workaround for 5.1 breaks under PowerShell 7's own
+# argument passing. Writing the JSON to a temp file and passing file:// avoids
+# shell quoting entirely and behaves the same on every PowerShell version.
+$paramsFile = [System.IO.Path]::GetTempFileName()
+$json = '{"portNumber":["' + $RemotePort + '"],"localPortNumber":["' + $LocalPort + '"]}'
+Set-Content -Path $paramsFile -Value $json -Encoding ascii   # ASCII: no BOM to confuse the JSON parser
 
-aws ssm start-session `
-    --region $Region `
-    --target $instanceId `
-    --document-name AWS-StartPortForwardingSession `
-    --parameters $params
+# The AWS CLI is a Windows binary and wants a Windows path with forward slashes.
+$paramsUri = 'file://' + ($paramsFile -replace '\\', '/')
+
+try {
+    aws ssm start-session `
+        --region $Region `
+        --target $instanceId `
+        --document-name AWS-StartPortForwardingSession `
+        --parameters $paramsUri
+}
+finally {
+    Remove-Item $paramsFile -Force -ErrorAction SilentlyContinue
+}

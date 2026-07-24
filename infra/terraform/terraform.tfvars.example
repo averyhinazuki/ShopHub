@@ -1,0 +1,25 @@
+# Copy this file to terraform.tfvars and fill in real values.
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is gitignored (see .gitignore) because it holds real
+# secrets. This .example file is the only tfvars-shaped file tracked in git —
+# keep it in sync when you add a new variable, but never put real values here.
+
+aws_region       = "us-east-1"
+ssh_allowed_cidr = "203.0.113.0/32" # your public IP /32 — find it with `curl ifconfig.me`
+instance_type    = "c7i-flex.large" # 4 GiB; the full stack (app+mysql+mongo+redis+kafka+nginx+prometheus+grafana) will not fit in 1 GiB
+key_pair_name    = "shophub-key"
+public_key_path  = "C:/Users/you/.ssh/shophub.pub" # ed25519 public half; keep the private key off the repo
+
+app_image     = "ghcr.io/<owner>/shophub:latest"
+ghcr_username = ""
+ghcr_token    = "" # leave blank if the GHCR package is public
+
+# Secrets — generate fresh values, never reuse these placeholders.
+#   openssl rand -base64 24   (passwords)
+#   openssl rand -base64 48   (jwt secret, needs >= 256 bits)
+#   openssl rand -hex 24      (grafana admin password; hex avoids characters
+#                              that need escaping in the generated .env)
+mysql_root_password    = "CHANGE_ME"
+jwt_secret             = "CHANGE_ME"
+grafana_admin_password = "CHANGE_ME" # login for the Grafana UI (viewed via SSM port-forward, not public)

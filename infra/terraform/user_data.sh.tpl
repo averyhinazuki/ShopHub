@@ -73,7 +73,7 @@ fi
 mount "$MOUNT"
 
 # One directory per datastore.
-mkdir -p "$MOUNT/mysql" "$MOUNT/mongo"
+mkdir -p "$MOUNT/mysql" "$MOUNT/mongo" "$MOUNT/prometheus" "$MOUNT/grafana"
 
 # ── App directory + compose stack ───────────────────────────────────────
 mkdir -p /opt/shophub
@@ -95,6 +95,7 @@ cat > .env <<'ENV_EOF'
 APP_IMAGE=${app_image}
 MYSQL_ROOT_PASSWORD=${mysql_root_password}
 JWT_SECRET=${jwt_secret}
+GRAFANA_ADMIN_PASSWORD=${grafana_admin_password}
 DATA_DIR=/data
 ENV_EOF
 chmod 600 .env

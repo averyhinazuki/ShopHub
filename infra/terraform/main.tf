@@ -89,6 +89,7 @@ resource "aws_instance" "shophub" {
     ghcr_token             = var.ghcr_token
     mysql_root_password    = var.mysql_root_password
     jwt_secret             = var.jwt_secret
+    grafana_admin_password = var.grafana_admin_password
     docker_compose_content = file("${path.module}/../../docker-compose.cloud.yml")
 
     # Stable device path for the data volume. On Nitro instances the requested

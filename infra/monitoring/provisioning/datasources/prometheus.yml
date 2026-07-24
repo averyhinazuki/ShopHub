@@ -1,6 +1,10 @@
 apiVersion: 1
 datasources:
+  # Explicit uid so the dashboard can reference this datasource by name rather
+  # than relying on isDefault — keeps panels working if another datasource is
+  # ever added and becomes the default.
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090

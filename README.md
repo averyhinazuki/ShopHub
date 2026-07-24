@@ -126,6 +126,8 @@ Correctness was perfect, but the 280 ms is only the 10 winners — the 4990 reje
 
 Median checkout acknowledgment dropped from ~15.5 s to **4 ms** while preserving zero oversells; the order is actually placed end-to-end in under a second, and the full backlog clears in ~10.6 s — a single-consumer throughput characteristic that scales out with partitions/concurrency.
 
+These same signals — request rate, p99 latency, JVM heap, and Kafka consumer lag — are now observable live on the Grafana dashboard rather than only via one-off JMeter runs.
+
 ---
 
 ## Features

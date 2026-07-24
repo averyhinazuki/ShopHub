@@ -1,0 +1,10 @@
+# Scrapes the ShopHub app's Actuator endpoint over the internal Docker network.
+# The app no longer publishes :8080 publicly (see docker-compose.cloud.yml).
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: shophub
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['app:8080']

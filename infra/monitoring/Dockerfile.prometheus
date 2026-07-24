@@ -1,0 +1,4 @@
+# Bakes the scrape config so the cloud box needs no config files delivered
+# separately — config ships via a CI image rebuild, like nginx.conf.
+FROM prom/prometheus:v2.53.0
+COPY prometheus.yml /etc/prometheus/prometheus.yml

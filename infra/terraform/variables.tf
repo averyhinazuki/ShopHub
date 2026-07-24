@@ -85,3 +85,9 @@ variable "jwt_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "grafana_admin_password" {
+  description = "Admin password for the Grafana UI (viewed via SSM port-forward)."
+  type        = string
+  sensitive   = true
+}

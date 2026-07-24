@@ -1,4 +1,7 @@
 # Bakes datasource + dashboard provisioning so Grafana comes up preconfigured.
+# Dashboards live under /etc/grafana (NOT /var/lib/grafana): the cloud stack
+# bind-mounts a volume over /var/lib/grafana, which would hide anything baked
+# there. /etc/grafana is not mounted, so the baked dashboards survive.
 FROM grafana/grafana:11.1.0
 COPY provisioning/ /etc/grafana/provisioning/
-COPY dashboards/  /var/lib/grafana/dashboards/
+COPY dashboards/  /etc/grafana/dashboards/

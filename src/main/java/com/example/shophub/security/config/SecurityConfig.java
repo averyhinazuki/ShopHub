@@ -48,6 +48,11 @@ public class SecurityConfig {
                         .requestMatchers("GET", "/api/categories/**").permitAll()
                         // Static frontend assets
                         .requestMatchers("/", "/*.html", "/js/**").permitAll()
+                        // Prometheus scrape + health check. Safe to leave open:
+                        // the app's :8080 isn't published and nginx only proxies
+                        // /api/, so these are reachable solely on the internal
+                        // Docker network (by the Prometheus container).
+                        .requestMatchers("/actuator/prometheus", "/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)

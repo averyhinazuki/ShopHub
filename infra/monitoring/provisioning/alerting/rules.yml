@@ -62,7 +62,12 @@ groups:
         title: p99 latency above 1s
         condition: C
         for: 5m
-        noDataState: NoData
+        # OK, not NoData: with the actuator scrape excluded, an idle site produces
+        # no samples at all, so NoData is this rule's resting state and Grafana
+        # would raise a permanent DatasourceNoData instance. No traffic genuinely
+        # means no latency problem. The other two rules keep NoData, because their
+        # metrics always exist -- absence there is a real signal.
+        noDataState: OK
         execErrState: Error
         isPaused: false
         labels:

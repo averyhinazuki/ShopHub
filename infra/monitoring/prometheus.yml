@@ -8,3 +8,13 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ['app:8080']
+
+  # Self-scrape: makes Prometheus' own health visible on the same dashboard.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Host metrics. The service name resolves in both compose files.
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']

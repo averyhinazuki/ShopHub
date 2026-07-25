@@ -16,6 +16,7 @@ A full-stack online shopping platform engineered for high-concurrency checkout u
 | Audit Logs | MongoDB |
 | Image Storage | Cloudinary |
 | Auth | JWT (access + refresh token rotation) |
+| Monitoring | Prometheus · Grafana (Micrometer / Actuator) |
 
 ---
 
@@ -126,7 +127,39 @@ Correctness was perfect, but the 280 ms is only the 10 winners — the 4990 reje
 
 Median checkout acknowledgment dropped from ~15.5 s to **4 ms** while preserving zero oversells; the order is actually placed end-to-end in under a second, and the full backlog clears in ~10.6 s — a single-consumer throughput characteristic that scales out with partitions/concurrency.
 
-These same signals — request rate, p99 latency, JVM heap, and Kafka consumer lag — are now observable live on the Grafana dashboard rather than only via one-off JMeter runs.
+---
+
+## Observability
+
+The signals above — request rate, p99 latency, JVM heap, and Kafka consumer lag — are observable live on a Grafana dashboard rather than only via one-off JMeter runs.
+
+
+The app exposes `/actuator/prometheus` through Micrometer, with histogram buckets enabled so p99 is computed from real bucket data instead of a client-side estimate. Kafka consumer lag comes free from the Micrometer Kafka binding. Prometheus scrapes it every 15s, keeps 7 days of TSDB on the EBS data volume, and also scrapes itself plus a `node-exporter` for host CPU, memory, and — the one that actually matters here — free space on `/data`, which backs the Prometheus TSDB, MySQL, and Mongo alike.
+
+**Dashboard** (`infra/monitoring/dashboards/shophub.json`, auto-provisioned), grouped into rows:
+
+| Row | Panels |
+| :--- | :--- |
+| HTTP | request rate, p95/p99 latency, 4xx/5xx per second, 5xx error ratio |
+| JVM | heap used vs max, non-heap, GC pause avg/max, GC collections/s, threads live/peak |
+| Runtime | process vs system CPU, load average, disk free (as the JVM sees it) |
+| Data layer | HikariCP pool state and acquire time, Kafka consumer lag |
+| Host | `/data` free %, host CPU, host memory, per-job scrape health |
+
+The HTTP queries exclude `uri="/actuator/prometheus"` — otherwise Prometheus scraping itself every 15s inflates the request rate and drags the latency quantiles toward zero. The host row comes from node-exporter reading `/proc` on the box, which is a different thing from the JVM's own view in the Runtime row: `disk_free_bytes` there is the app container's filesystem, while `/data` free % is the shared EBS volume that would take MySQL, Mongo, and Prometheus down together.
+
+Three alert rules ship with it — app scrape down (2m), p99 over 1s (5m), `/data` under 20% free (10m). They surface in the Grafana alerting UI; no notification channel is wired.
+
+**Config ships as images.** Rather than delivering config files to the box, `prometheus.yml`, the dashboard, the datasource, and the alert rules are baked into `shophub-prometheus` / `shophub-grafana` images that CI rebuilds and publishes on any change under `infra/monitoring/` — the same pattern the nginx image uses for `nginx.conf`. A config change is a normal merge, not a server edit.
+
+**Nothing is publicly exposed.** The app's public `:8080` was removed, so `/actuator` is not internet-reachable at all (port 80 falls through to the SPA). Prometheus, Grafana, and node-exporter bind to `127.0.0.1` on the instance and the security group only opens 22/443/80. Access goes through AWS SSM port forwarding — no inbound port, no SSH key, IAM-authenticated and CloudTrail-logged:
+
+```powershell
+.\scripts\grafana-tunnel.ps1              # Grafana  -> http://localhost:3000
+.\scripts\grafana-tunnel.ps1 -Prometheus  # Prometheus -> http://localhost:9090
+```
+
+The script resolves the instance by tag on every run, because a `terraform apply` that changes `user_data` replaces the box and the ID changes.
 
 ---
 

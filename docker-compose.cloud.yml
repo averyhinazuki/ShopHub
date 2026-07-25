@@ -112,6 +112,29 @@ services:
     depends_on:
       - app
 
+  # Host-level metrics (disk, CPU, memory) for the box itself — the containers
+  # can look healthy while /data fills up under them.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      # Makes the EBS volume report as mountpoint="/data", not "/host/root/data".
+      - --path.rootfs=/host/root
+      # Report the host's filesystems, not the container's own overlay mounts.
+      # $$ is compose escaping for a literal $ in the regex.
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    pid: host
+    mem_limit: 128m
+    # Loopback only, same posture as prometheus/grafana below.
+    ports:
+      - "127.0.0.1:9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+
   prometheus:
     image: ${PROMETHEUS_IMAGE:-ghcr.io/averyhinazuki/shophub-prometheus:latest}
     restart: unless-stopped
@@ -126,6 +149,7 @@ services:
       - ${DATA_DIR:-./data}/prometheus:/prometheus
     depends_on:
       - app
+      - node-exporter
 
   grafana:
     image: ${GRAFANA_IMAGE:-ghcr.io/averyhinazuki/shophub-grafana:latest}

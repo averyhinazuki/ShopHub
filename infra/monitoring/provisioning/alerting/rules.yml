@@ -1,0 +1,143 @@
+# Grafana unified-alerting rules, provisioned at startup (Dockerfile.grafana
+# copies all of provisioning/ into /etc/grafana/provisioning/).
+#
+# No contact point is provisioned on purpose: these fire onto Grafana's built-in
+# default policy, whose stock email contact point has no SMTP configured, so
+# delivery silently no-ops. The rules are there to be *seen* in the Alerting UI.
+# Wiring a real notification channel (SMTP/Slack) is deliberate backlog, not an
+# oversight -- it needs a secret and a destination this project doesn't have.
+#
+# Each rule is the standard three-node chain: A = the Prometheus query,
+# B = reduce it to a single number, C = compare that number to a threshold.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: shophub
+    folder: ShopHub
+    interval: 1m
+    rules:
+      - uid: shophub-app-scrape-down
+        title: App scrape down
+        condition: C
+        for: 2m
+        noDataState: NoData
+        execErrState: Error
+        isPaused: false
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus cannot scrape the app's /actuator/prometheus endpoint.
+          description: >-
+            The app container is down, unhealthy, or Spring Security is
+            rejecting the scrape. Check `docker compose logs app`.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              expr: up{job="shophub"}
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource: { type: __expr__, uid: __expr__ }
+              type: reduce
+              reducer: last
+              expression: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource: { type: __expr__, uid: __expr__ }
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      - uid: shophub-p99-latency-high
+        title: p99 latency above 1s
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        isPaused: false
+        labels:
+          severity: warning
+        annotations:
+          summary: p99 HTTP latency has been over 1s for 5 minutes.
+          description: >-
+            Checkout acknowledgment normally sits in single-digit ms. Sustained
+            p99 over 1s means the app, MySQL, or Redis is struggling.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              # Same actuator exclusion as the dashboard's latency panel: the
+              # 15s self-scrape is fast and would drag the quantile down.
+              expr: histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{uri!="/actuator/prometheus"}[5m])) by (le))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource: { type: __expr__, uid: __expr__ }
+              type: reduce
+              reducer: last
+              expression: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource: { type: __expr__, uid: __expr__ }
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      - uid: shophub-data-volume-filling
+        title: /data volume under 20% free
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        isPaused: false
+        labels:
+          severity: critical
+        annotations:
+          summary: The EBS data volume is running out of space.
+          description: >-
+            /data backs the Prometheus TSDB, MySQL, and Mongo. Filling it takes
+            all three down at once. See docs/MONITORING.md.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              expr: node_filesystem_avail_bytes{mountpoint="/data"} / node_filesystem_size_bytes{mountpoint="/data"}
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource: { type: __expr__, uid: __expr__ }
+              type: reduce
+              reducer: last
+              expression: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource: { type: __expr__, uid: __expr__ }
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [0.2] }

@@ -70,6 +70,24 @@ services:
     ports:
       - "9092:9092"
 
+  # Host metrics. Locally this reports Docker Desktop's Linux VM, not Windows —
+  # enough to check the host panels render, real numbers only on the cloud box.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      # Report the host's filesystems, not the container's own overlay mounts.
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    pid: host
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+
   prometheus:
     build:
       context: ./infra/monitoring
@@ -78,6 +96,7 @@ services:
       - "9090:9090"
     depends_on:
       - app
+      - node-exporter
 
   grafana:
     build:

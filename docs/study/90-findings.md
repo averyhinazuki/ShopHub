@@ -15,7 +15,7 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 |---|---|---|---|---|
 | F1 | DLT reports FAILED for a checkout that created a real order | high | **fixed** | 8 |
 | F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | known-deliberate | 9 |
-| F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | open | 5 |
+| F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | **fixed** | 5 |
 | F4 | Duplicate username returns 500 instead of 409 | low | **fixed** | 1 |
 | F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | **fixed** | 2 |
 | F6 | `JwtUtil` javadoc says 15m, config says 5m | doc | **fixed** | 2 |
@@ -23,18 +23,18 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | open | 3 |
 | F9 | Absent checkout key returns PENDING → a correct client polls forever | high | **fixed** | 3 |
 | F11 | `product:{id}:stock` is written and deleted but never read | trivial | **fixed** | 5 |
-| F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | open | 10 |
+| F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | **fixed** | 10 |
 | F20 | Empty `terraform.tfstate` committed at repo root (no secrets) | trivial | **fixed** | 13 |
 | F22 | No domain metrics - every finding above would be invisible in prod | medium | open | 14 |
 | F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | open | 13 |
 | F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | open | 12 |
 | F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | open | 11 |
 | F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | open | 11 |
-| F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | open | 10 |
-| F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | open | 8 |
+| F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | **fixed** | 10 |
+| F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | **fixed** | 8 |
 | F13 | Checkout compensation failure is logged, never retried or alerted | high | open | 7 |
 | F12 | Redis outage makes product pages 500 instead of degrading | medium | **fixed** | 5 |
-| F10 | `orders.user_id` has no index and no FK constraint | medium | open | 4 |
+| F10 | `orders.user_id` has no index and no FK constraint | medium | **fixed** (indexes; FK deferred) | 4 |
 | F23 | Bare `RuntimeException` still thrown at four service sites → 500s | low-med | open | 16 |
 | F24 | The `checkout:{id}` record is hand-rolled in three classes | low | open | 16 |
 
@@ -351,7 +351,18 @@ the cache is fine; losing the other three is the same damage as above, all at on
 
 ---
 
-## F16 - MongoDB collections have no TTL, so an audit log can kill MySQL - `open` (high)
+## F16 - MongoDB collections have no TTL, so an audit log can kill MySQL - `fixed` (high)
+
+**Fixed** in `980fc36` (Unit 16, phase 3). TTL indexes: 30 days on `user_action_log`, 365 on
+`order_activity_log`.
+
+**THE FINDING WAS INCOMPLETE, and the omission would have made the fix a silent no-op:**
+`spring.data.mongodb.auto-index-creation` was unset and **Spring Boot 3 defaults it to `false`**,
+so `@Indexed(expireAfterSeconds=…)` creates nothing on its own. The collections would have grown
+forever while appearing to have retention. Now set explicitly in `application.yml`.
+
+Second thing worth knowing: the TTL works because Spring Data stores `LocalDateTime` as a BSON
+date. A TTL index on a *string* field is accepted silently and never deletes anything.
 
 **Where:** `document/UserActionLog.java`, `document/OrderActivityLog.java` - no `@Indexed(expireAfterSeconds=...)`
 **Taught in:** Unit 10
@@ -379,7 +390,11 @@ Pick retention per collection - `user_action_log` is high-volume and low-value (
 
 ---
 
-## F15 - Neither Mongo collection has an index, so reading the audit trail is a full scan - `open` (medium)
+## F15 - Neither Mongo collection has an index, so reading the audit trail is a full scan - `fixed` (medium)
+
+**Fixed** in `980fc36` (Unit 16, phase 3), alongside F16 as the write-up predicted. Compound
+`(userId, timestamp)` and `(orderId, timestamp)`, plus `orderId` on its own; each TTL index doubles
+as the timestamp index. Same `auto-index-creation` caveat as F16 — see there.
 
 **Where:** both `document/*.java` (no `@Indexed`/`@CompoundIndex`), both `repository/mongo/*.java`
 **Taught in:** Unit 10
@@ -404,7 +419,12 @@ Note the TTL index from **F16** would also serve as a `timestamp` index, so the 
 
 ---
 
-## F14 - Three partitions, one consumer thread: the async drain rate is 1/3 of design - `open` (medium)
+## F14 - Three partitions, one consumer thread: the async drain rate is 1/3 of design - `fixed` (medium)
+
+**Fixed** in `a09361f` (Unit 16, phase 3). `spring.kafka.listener.concurrency: 3`. The caveat was
+understood before turning it up: concurrent processing of different partitions is now real rather
+than theoretical, widening the check-then-act window in `ConsumerIdempotencyGuard`. Still safe —
+different partitions hold different checkoutIds. NOT VERIFIED: needs a running broker.
 
 **Where:** no `spring.kafka.listener.concurrency` anywhere; `config/KafkaTopicConfig.java:20,28,36`
 **Taught in:** Unit 8
@@ -530,7 +550,12 @@ the Redis write and delete traffic for the product cache.
 
 ---
 
-## F10 — `orders.user_id` has no index and no foreign key constraint — `open` (perf + integrity)
+## F10 — `orders.user_id` has no index and no foreign key constraint — `fixed` (indexes) (perf + integrity)
+
+**Fixed** in `2050e29` (Unit 16, phase 3). `V4__order_indexes.sql` adds `idx_orders_user` and
+`idx_orders_status_created`. **The FK is deliberately still open** — it needs existing rows proven
+clean and it constrains user deletion, so it is a separate decision. NOT VERIFIED against MySQL:
+DDL only, Docker unavailable, no query plan checked.
 
 **Where:** `db/migration/V1__init.sql` (orders table), `entity/Order.java:19-20`
 **Found in:** Unit 4 (ORM basics)
@@ -805,7 +830,17 @@ other bare `throw new RuntimeException(...)` sites in service code at the same t
 
 ---
 
-## F3 — Second deletions fall arbitrarily behind: a 500ms sleep caps the pool at ~16/sec — `open` (REVISED)
+## F3 — Second deletions fall arbitrarily behind: a 500ms sleep caps the pool at ~16/sec — `fixed` (REVISED)
+
+**Fixed** in `84a8ac8` (Unit 16, phase 3). `TaskScheduler.schedule(…, +500ms)`; `cacheEvictExecutor`
+deleted. Two traps handled while doing it, neither in the original write-up:
+
+1. `ScheduledAnnotationBeanPostProcessor` resolves a `TaskScheduler` **by type**, so introducing one
+   would have silently moved `OrderExpiryScheduler`'s `@Scheduled` onto it. `AsyncConfig` now declares
+   two named beans; `@Scheduled` falls back to the one named `taskScheduler`.
+2. Lombok's `@RequiredArgsConstructor` does **not** copy `@Qualifier` onto generated constructor
+   parameters, and there are now two `TaskScheduler` beans. `ProductCacheService` gets an explicit
+   constructor rather than risk binding to the wrong one — a failure that would only appear under load.
 
 **Where:** `service/ProductCacheService.java:85-94`, `config/AsyncConfig.java:17-27`
 **Taught in:** Unit 5

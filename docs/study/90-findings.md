@@ -13,15 +13,15 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 
 | # | Finding | Severity | Status | Unit |
 |---|---|---|---|---|
-| F1 | DLT reports FAILED for a checkout that created a real order | high | open | 8 |
+| F1 | DLT reports FAILED for a checkout that created a real order | high | **fixed** | 8 |
 | F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | known-deliberate | 9 |
 | F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | open | 5 |
-| F4 | Duplicate username returns 500 instead of 409 | low | open | 1 |
+| F4 | Duplicate username returns 500 instead of 409 | low | **fixed** | 1 |
 | F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | **fixed** | 2 |
 | F6 | `JwtUtil` javadoc says 15m, config says 5m | doc | **fixed** | 2 |
 | F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | open | 2 |
 | F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | open | 3 |
-| F9 | Absent checkout key returns PENDING → a correct client polls forever | high | open | 3 |
+| F9 | Absent checkout key returns PENDING → a correct client polls forever | high | **fixed** | 3 |
 | F11 | `product:{id}:stock` is written and deleted but never read | trivial | **fixed** | 5 |
 | F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | open | 10 |
 | F20 | Empty `terraform.tfstate` committed at repo root (no secrets) | trivial | **fixed** | 13 |
@@ -33,13 +33,24 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | open | 10 |
 | F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | open | 8 |
 | F13 | Checkout compensation failure is logged, never retried or alerted | high | open | 7 |
-| F12 | Redis outage makes product pages 500 instead of degrading | medium | open | 5 |
+| F12 | Redis outage makes product pages 500 instead of degrading | medium | **fixed** | 5 |
 | F10 | `orders.user_id` has no index and no FK constraint | medium | open | 4 |
+| F23 | Bare `RuntimeException` still thrown at four service sites → 500s | low-med | open | 16 |
+| F24 | The `checkout:{id}` record is hand-rolled in three classes | low | open | 16 |
 
 
 ---
 
-## F1 — DLT can report FAILED for a checkout that created a real order — `open`
+## F1 — DLT can report FAILED for a checkout that created a real order — `fixed`
+
+**Fixed** in `8f091bf` (Unit 16, phase 2). `writeStatus` now swallows any exception, not just
+`JsonProcessingException` — the order is committed by the time it runs, so failing the message can
+only cause harm. The DLT's status *read* is wrapped separately and **returns without writing** on
+failure: if the current status can't be read, a SUCCESS may be sitting there unread, and writing
+FAILED blind is the exact mistake the SUCCESS-guard exists to prevent.
+
+Now reproduced by a test (`handleCheckoutRequested_statusWriteFailsAfterOrderCommitted_doesNotRethrow`),
+closing the write-up's "Not yet reproduced by a test".
 
 **Where:** `src/main/java/com/example/shophub/kafka/consumer/CheckoutRequestedConsumer.java`
 **Taught in:** Unit 8 (Kafka)
@@ -79,7 +90,7 @@ now disagree." Wrong — on the retry, `loadCartSnapshot` throws *before* any de
 reflect a genuine sale. The damage is purely that the customer is misinformed — and, per **F8**,
 they'll likely retry and create a second real order.
 
-Not yet reproduced by a test.
+~~Not yet reproduced by a test.~~ Reproduced and guarded — see the fix note at the top.
 
 ---
 
@@ -464,7 +475,12 @@ is best-effort everywhere.**
 
 ---
 
-## F12 - A Redis outage turns product browsing into 500s - `open` (medium)
+## F12 - A Redis outage turns product browsing into 500s - `fixed` (medium)
+
+**Fixed** in `43a0dbd` (Unit 16, phase 2). `getDetail` treats a connection failure as a miss;
+`setDetail`/`deleteCache` log and return. `deleteCache` matters most — it runs *before* the MySQL
+write it protects, and the entry carries a 60s TTL, so the worst case is bounded staleness rather
+than a failed write. New `ProductCacheServiceTest` covers all three paths.
 
 **Where:** `service/ProductCacheService.java:41-78`
 **Taught in:** Unit 5
@@ -567,7 +583,12 @@ matter at scale.**
 
 ---
 
-## F9 — An absent checkout key returns PENDING, so a correct client can poll forever — `open` (high)
+## F9 — An absent checkout key returns PENDING, so a correct client can poll forever — `fixed` (high)
+
+**Fixed** in `a58bcf1` (Unit 16, phase 2). Absent key → `ResourceNotFoundException` → 404. Both
+"also worth doing" items landed too: the producer's failure callback now writes
+`FAILED("could not be queued")`, and the client-side polling bound is part of F8's fix. A key that
+is present but *corrupt* deliberately still answers PENDING — corrupt is not absent.
 
 **Where:** `service/OrderService.java:183-194` (and `:102-108`, `producer/OrderEventProducer.java:73-93`)
 **Taught in:** Unit 3 (async checkout)
@@ -754,7 +775,11 @@ Fix by correcting the comment to describe the outbound-pass behavior.
 
 ---
 
-## F4 — Duplicate username registration returns 500 instead of 409 — `open`
+## F4 — Duplicate username registration returns 500 instead of 409 — `fixed`
+
+**Fixed** in `72c8662` (Unit 16, phase 2). `DuplicateUsernameException` → 409. The write-up's
+"worth grepping for other bare `throw new RuntimeException(...)` sites" was done and the results
+are logged as **F23** rather than fixed piecemeal here.
 
 **Where:** `service/AuthService.java:37`, `exception/GlobalExceptionHandler.java:51-54`
 **Found in:** Unit 1 (HTTP status semantics) — found by reasoning from the 4xx/5xx contract
@@ -815,3 +840,60 @@ blocks 500ms per eviction.
 
 **Fix:** use a `ScheduledExecutorService` (`schedule(task, 500, MILLISECONDS)`) so the delay costs
 no thread at all. Capacity then becomes "how fast can Redis accept DELETEs," which is enormous.
+
+---
+
+## F23 - Bare `RuntimeException` is still thrown at four service sites - `open` (low-medium)
+
+**Where:** `service/AuthService.java:72`, `:78`; `service/OrderService.java:139`, `:156`
+**Found in:** Unit 16 phase 2, while fixing **F4**
+
+F4's write-up said to grep for other bare `throw new RuntimeException(...)` sites in service code.
+Done — there are four, and every one lands in `GlobalExceptionHandler:51`'s catch-all as a **500**:
+
+| Site | Condition | Should be |
+|---|---|---|
+| `AuthService.refresh:72` | signature invalid / expired | **401** |
+| `AuthService.refresh:78` | token revoked or unknown jti | **401** |
+| `OrderService.processCheckout:139` | Redisson `tryLock` timed out | **503** (retryable) |
+| `OrderService.processCheckout:156` | lock wait interrupted | **503** (retryable) |
+
+The two auth ones are the more serious: a client cannot distinguish "your session ended, log in
+again" from "the server is broken", so a correct client has no way to know it should re-authenticate.
+
+The two checkout ones are subtler and interact with **F1**. `processCheckout` runs on the Kafka
+listener thread, so its exception is not shaped into an HTTP status at all — it is caught by
+`CheckoutRequestedConsumer`'s generic handler and **rethrown to trigger a retry**, which is the
+right behaviour. So the fix there is *not* simply a mapped exception type: a dedicated
+`LockUnavailableException` would make the retry decision explicit rather than incidental, and would
+stop the same throw producing a 500 if `processCheckout` is ever called synchronously.
+
+**Deliberately not fixed alongside F4.** These are one habit, not four bugs, and the right shape is
+probably a small status-carrying exception base with one handler reading it — the same conclusion
+DocPlatform reached for its F33/F5 pair. Fixing them one at a time is what produced this spread.
+
+---
+
+## F24 - The `checkout:{id}` record is hand-rolled in three classes - `open` (low)
+
+**Where:** `service/OrderService.java` (write PENDING, read status),
+`kafka/consumer/CheckoutRequestedConsumer.java` (`writeStatus`, `handleDlt`'s read),
+`kafka/producer/OrderEventProducer.java` (`markCheckoutFailed`, added in phase 2)
+**Found in:** Unit 16 phase 2
+
+The key format `"checkout:" + id`, the `status-ttl-minutes` TTL, the Jackson round-trip and the
+"never throw on a Redis failure" rule are now duplicated across **three** classes. Phase 2 had to
+apply the same catch-broadening in each of them independently, and adding the producer's
+`markCheckoutFailed` meant copying the format and TTL a third time.
+
+Nothing is wrong today — the copies agree. The risk is that they are only kept in agreement by
+someone remembering to update all three, and the TTL in particular is read from config separately in
+each class via its own `@Value`.
+
+**Fix:** a `CheckoutStatusStore` owning the key, the TTL, serialization, the absent → 404 rule
+(**F9**) and the never-throw rule (**F1**). Roughly 40 lines, and it deletes more than it adds.
+
+**Why it was not done in phase 2:** `CheckoutRequestedConsumerTest` mocks `StringRedisTemplate` and
+`ValueOperations` directly, so introducing the store would have required rewriting the mocking in
+all 7 existing consumer tests *in the same change as the F1 correctness fix* — churn against the
+very tests guarding that path. Worth doing as its own change, with the tests migrated deliberately.

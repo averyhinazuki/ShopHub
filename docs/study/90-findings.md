@@ -9,30 +9,32 @@ Status values: `open` / `fixed` / `known-deliberate`.
 
 Bodies below are not in numeric order — use this table.
 
-| # | Finding | Severity | Unit |
-|---|---|---|---|
-| F1 | DLT reports FAILED for a checkout that created a real order | high | 8 |
-| F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | 9 |
-| F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | 5 |
-| F4 | Duplicate username returns 500 instead of 409 | low | 1 |
-| F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | 2 |
-| F6 | `JwtUtil` javadoc says 15m, config says 5m | doc | 2 |
-| F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | 2 |
-| F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | 3 |
-| F9 | Absent checkout key returns PENDING → a correct client polls forever | high | 3 |
-| F11 | `product:{id}:stock` is written and deleted but never read | trivial | 5 |
-| F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | 10 |
-| F20 | Empty `terraform.tfstate` committed at repo root (no secrets) | trivial | 13 |
-| F22 | No domain metrics - every finding above would be invisible in prod | medium | 14 |
-| F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | 13 |
-| F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | 12 |
-| F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | 11 |
-| F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | 11 |
-| F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | 10 |
-| F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | 8 |
-| F13 | Checkout compensation failure is logged, never retried or alerted | high | 7 |
-| F12 | Redis outage makes product pages 500 instead of degrading | medium | 5 |
-| F10 | `orders.user_id` has no index and no FK constraint | medium | 4 |
+Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
+
+| # | Finding | Severity | Status | Unit |
+|---|---|---|---|---|
+| F1 | DLT reports FAILED for a checkout that created a real order | high | open | 8 |
+| F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | known-deliberate | 9 |
+| F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | open | 5 |
+| F4 | Duplicate username returns 500 instead of 409 | low | open | 1 |
+| F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | **fixed** | 2 |
+| F6 | `JwtUtil` javadoc says 15m, config says 5m | doc | **fixed** | 2 |
+| F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | open | 2 |
+| F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | open | 3 |
+| F9 | Absent checkout key returns PENDING → a correct client polls forever | high | open | 3 |
+| F11 | `product:{id}:stock` is written and deleted but never read | trivial | **fixed** | 5 |
+| F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | open | 10 |
+| F20 | Empty `terraform.tfstate` committed at repo root (no secrets) | trivial | **fixed** | 13 |
+| F22 | No domain metrics - every finding above would be invisible in prod | medium | open | 14 |
+| F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | open | 13 |
+| F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | open | 12 |
+| F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | open | 11 |
+| F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | open | 11 |
+| F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | open | 10 |
+| F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | open | 8 |
+| F13 | Checkout compensation failure is logged, never retried or alerted | high | open | 7 |
+| F12 | Redis outage makes product pages 500 instead of degrading | medium | open | 5 |
+| F10 | `orders.user_id` has no index and no FK constraint | medium | open | 4 |
 
 
 ---
@@ -205,7 +207,10 @@ your infrastructure. That is not a pin, it is a subscription.
 
 ---
 
-## F20 - An empty `terraform.tfstate` is committed at the repo root - `open` (trivial)
+## F20 - An empty `terraform.tfstate` is committed at the repo root - `fixed` (trivial)
+
+**Fixed** in `f063a3c` (Unit 16, phase 1). `git rm --cached`; the file stays on disk, now
+covered by `.gitignore:89`.
 
 **Where:** repo root `terraform.tfstate`, added in commit `4798ba3`
 **Taught in:** Unit 13
@@ -487,7 +492,12 @@ piece that is supposed to be optional and isn't.
 
 ---
 
-## F11 - `product:{id}:stock` is written and deleted but never read - `open` (trivial waste)
+## F11 - `product:{id}:stock` is written and deleted but never read - `fixed` (trivial waste)
+
+**Fixed** in `d2a7381` (Unit 16, phase 1). `getStock`, `STOCK_KEY`, `stockKey` and the two
+maintenance lines are gone. **Bonus defect found while fixing:** `ProductService.updateProduct`'s
+javadoc claimed ":stock is untouched", but `deleteCache` had been deleting it all along — the
+comment was already false before the removal.
 
 **Where:** `service/ProductCacheService.java:33`, `:53-56`, `:64-65`, `:76`
 **Taught in:** Unit 5
@@ -692,7 +702,12 @@ its subject no longer exists, which is a **401**. Same 4xx/5xx inversion family 
 
 ---
 
-## F6 — `JwtUtil` javadoc claims a 15-minute access token; it's actually 5 — `open` (doc only, trivial)
+## F6 — `JwtUtil` javadoc claims a 15-minute access token; it's actually 5 — `fixed` (doc only, trivial)
+
+**Fixed** in `4297c85` (Unit 16, phase 1). Resolved by *removing* the duration rather than
+correcting it — the config is authoritative and the javadoc now names the property.
+**The finding was incomplete:** the same stale "15m" also appeared in
+`AuthService.logout`'s javadoc, fixed in the same commit.
 
 **Where:** `security/JwtUtil.java:28` vs `resources/application.yml:63`
 
@@ -709,7 +724,12 @@ an incident. Fix the comment, or drop the duration from it since the config is a
 
 ---
 
-## F5 — `UserActionLogFilter`'s ordering comment states a rationale that isn't load-bearing — `open` (doc only, low severity)
+## F5 — `UserActionLogFilter`'s ordering comment states a rationale that isn't load-bearing — `fixed` (doc only, low severity)
+
+**Fixed** in `59fa2a6` (Unit 16, phase 1). The comment now states the real constraint —
+the filter must sit inside `SecurityContextHolderFilter`, which clears the context in a
+`finally` on the outbound pass — and says explicitly that position relative to `JwtFilter`
+does not matter.
 
 **Where:** `filter/UserActionLogFilter.java:18-19`
 **Found in:** Unit 2 (servlet filter chain)

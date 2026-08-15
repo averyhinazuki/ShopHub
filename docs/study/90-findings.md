@@ -26,10 +26,10 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | **fixed** | 10 |
 | F20 | Empty `terraform.tfstate` committed at repo root (no secrets) | trivial | **fixed** | 13 |
 | F22 | No domain metrics - every finding above would be invisible in prod | medium | **fixed** | 14 |
-| F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | open | 13 |
-| F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | open | 12 |
-| F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | open | 11 |
-| F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | open | 11 |
+| F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | **fixed** | 13 |
+| F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | **fixed** | 12 |
+| F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | **fixed** | 11 |
+| F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | **fixed** | 11 |
 | F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | **fixed** | 10 |
 | F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | **fixed** | 8 |
 | F13 | Checkout compensation failure is logged, never retried or alerted | high | **fixed** (now detectable) | 7 |
@@ -202,7 +202,11 @@ Grafana and looks.
 
 ---
 
-## F21 - Any `terraform apply` can silently replace the instance, because the AMI re-resolves - `known-deliberate`
+## F21 - Any `terraform apply` can silently replace the instance, because the AMI re-resolves - `fixed`
+
+**Fixed** in `9be7233` (Unit 16, phase 6). `lifecycle { ignore_changes = [ami] }`, so OS upgrades
+become an explicit `terraform apply -replace=aws_instance.shophub`. `terraform validate` passes.
+**NOT live-validated** — no plan has been run against real AWS state.
 
 **Where:** `infra/terraform/main.tf:52-54` (data source), `:65-66` (consumed by the instance)
 **Taught in:** Unit 13
@@ -261,7 +265,14 @@ recurrence.
 
 ---
 
-## F19 - The deploy verifies the command ran, not that the app works - `open` (medium)
+## F19 - The deploy verifies the command ran, not that the app works - `fixed` (medium)
+
+**Fixed** in `9be7233` (Unit 16, phase 6). Both fixes 1 and 2 landed: a `curl -fsS` smoke test
+appended to the SSM command, and an `app` healthcheck in compose. The healthcheck required adding
+**curl to the Dockerfile's runtime stage** — `eclipse-temurin:21-jre` ships neither curl nor wget,
+which the write-up assumed away. Fix 3 (automatic rollback) stays out of scope: the SHA-tagged
+images exist but compose references `:latest` everywhere. **NOT live-validated** — the thing this
+most wants is a deliberately broken deploy proving the pipeline goes red.
 
 **Where:** `.github/workflows/ci.yml:289-326`; `docker-compose.cloud.yml` app service has no healthcheck
 **Taught in:** Unit 12
@@ -293,7 +304,15 @@ and **the pipeline goes green on a deploy that took the site down.**
 
 ---
 
-## F18 - `mem_limit` is set on the three stateless services and none of the five stateful ones - `open` (medium)
+## F18 - `mem_limit` is set on the three stateless services and none of the five stateful ones - `fixed` (medium)
+
+**Fixed** in `9be7233` (Unit 16, phase 6). All nine services capped, 3200 MiB of 4096; header and
+the stale "both stateful services bind-mount" comment corrected (it is five now).
+
+**The constraint the write-up didn't mention:** the compose file ships inside `user_data`, against
+EC2's **16 KB limit**. The first draft of these comments took it to 15628 bytes — 756 bytes of
+headroom — and had to be trimmed back to 14327. Documenting the reasoning in the file has a size
+cost here that it does not have in ordinary code. **NOT live-validated.**
 
 **Where:** `docker-compose.cloud.yml` - `mem_limit` appears only at `:129`, `:144`, `:160`
 **Taught in:** Unit 11
@@ -330,7 +349,22 @@ four now. Prometheus (`:149`) and Grafana (`:164`) persist to `/data` too. The c
 
 ---
 
-## F17 - Redis `allkeys-lru` can evict idempotency keys, refresh tokens and checkout status - `open` (high)
+## F17 - Redis `allkeys-lru` can evict idempotency keys, refresh tokens and checkout status - `fixed` (high)
+
+**Fixed** in `9be7233` (Unit 16, phase 6): `--maxmemory-policy volatile-ttl`, plus `appendonly yes`
+and a `/data/redis` bind mount. **Two corrections to what is written below:**
+
+1. **Option 2 is wrong as stated.** A different Redis *logical database* cannot have its own
+   eviction settings — `maxmemory` and `maxmemory-policy` are **server-wide**. Only a separate
+   *instance* gives separate policy.
+2. **`volatile-ttl` was never considered, and it is the answer.** The note below correctly rules out
+   `volatile-lru` (all four types carry TTLs, so it degenerates to `allkeys-lru`) but `volatile-ttl`
+   orders by **shortest remaining TTL**, not recency — and the actual ladder is cache 60s → checkout
+   30m → dedup 24h → refresh 1d, exactly the priority order wanted. One word, no new infrastructure.
+
+`maxmemory` stays at 128mb on purpose: raising it only delays the problem and spends budget F18
+needs. Redis samples rather than sorts, so this is a strong heuristic, not a guarantee — the durable
+fixes (separate instance, or dedup as a MySQL unique index) remain open. **NOT live-validated.**
 
 **Where:** `docker-compose.cloud.yml:65` - `command: --maxmemory 128mb --maxmemory-policy allkeys-lru`
 **Taught in:** Unit 11

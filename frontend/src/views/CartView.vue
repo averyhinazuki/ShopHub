@@ -56,14 +56,27 @@
         </button>
       </div>
 
+      <!-- Checkout is asynchronous: the server returns 202 with a checkoutId and
+           the order is created by a Kafka consumer, so the result arrives by
+           polling rather than in the response. -->
+      <p v-if="checkingOut" class="mt-4 text-sm text-gray-400 flex items-center gap-2">
+        <span class="inline-block w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin"></span>
+        Placing your order — this usually takes a moment.
+      </p>
+
       <p v-if="checkoutError" class="mt-4 text-sm text-red-500">{{ checkoutError }}</p>
+
+      <p v-if="checkoutNotice" class="mt-4 text-sm text-amber-600">
+        {{ checkoutNotice }}
+        <RouterLink to="/orders" class="underline ml-1">Check your orders</RouterLink>
+      </p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter, RouterLink } from 'vue-router'
 import api from '../services/api'
 import { useCartStore } from '../stores/cart'
 
@@ -71,6 +84,7 @@ const items = ref([])
 const loading = ref(false)
 const checkingOut = ref(false)
 const checkoutError = ref('')
+const checkoutNotice = ref('')
 const router = useRouter()
 const cart = useCartStore()
 
@@ -109,19 +123,107 @@ async function removeItem(item) {
   }
 }
 
+// ── Async checkout ──────────────────────────────────────────────────────────
+// POST /orders/checkout returns 202 Accepted with a checkoutId; the order is
+// created later by a Kafka consumer. This view previously discarded that
+// response and navigated straight to /orders, which meant:
+//   - failures were completely silent (axios resolves on 2xx, so 202 took the
+//     happy path and the catch never ran; a sold-out checkout and a successful
+//     one looked identical)
+//   - the user, seeing no order, retried — and a retry mints a NEW checkoutId,
+//     which the consumer's dedup guard cannot recognise as the same intent,
+//     producing two real orders for one intended purchase
+//   - even a successful checkout showed an empty order list, because /orders was
+//     fetched before the consumer had committed anything
+//
+// So the result has to be polled. Every branch below terminates.
+
+const POLL_INITIAL_MS = 400
+const POLL_MAX_MS     = 3000
+const POLL_BUDGET_MS  = 45000   // total, not per attempt
+
+let pollCancelled = false
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+/**
+ * Polls until the checkout reaches a terminal state, or we give up.
+ * Bounded client-side on purpose, independent of what the server promises.
+ */
+async function pollCheckoutStatus(checkoutId) {
+  const deadline = Date.now() + POLL_BUDGET_MS
+  let delay = POLL_INITIAL_MS
+
+  while (Date.now() < deadline) {
+    if (pollCancelled) return { outcome: 'ABANDONED' }
+    await sleep(delay)
+    delay = Math.min(delay * 1.5, POLL_MAX_MS)
+
+    try {
+      const { data } = await api.get(`/orders/checkout-status/${checkoutId}`)
+      if (data.status === 'SUCCESS') return { outcome: 'SUCCESS', orderId: data.orderId }
+      if (data.status === 'FAILED')  return { outcome: 'FAILED', reason: data.failureReason }
+      // PENDING — the consumer hasn't finished yet. Keep waiting.
+    } catch (e) {
+      // 404 means the status record is gone: it expired, or never existed. The
+      // server deliberately does not report that as PENDING, because absence of
+      // information is not an ongoing state — treating it as one is what made
+      // this loop non-terminating in the first place.
+      if (e.response?.status === 404) return { outcome: 'UNKNOWN' }
+      // Anything else (network blip, 5xx) is worth another attempt within budget.
+    }
+  }
+  return { outcome: 'TIMEOUT' }
+}
+
 async function checkout() {
   checkoutError.value = ''
+  checkoutNotice.value = ''
   checkingOut.value = true
+  pollCancelled = false
+
   try {
-    await api.post('/orders/checkout')
-    cart.reset()
-    router.push('/orders')
+    const { data } = await api.post('/orders/checkout')
+    const checkoutId = data?.checkoutId
+    if (!checkoutId) {
+      // Shouldn't happen, but never poll a URL built from undefined.
+      checkoutNotice.value = 'Your order was accepted but we could not track it.'
+      return
+    }
+
+    const result = await pollCheckoutStatus(checkoutId)
+
+    switch (result.outcome) {
+      case 'SUCCESS':
+        // Only now is the server cart actually empty — persistOrder clears it in
+        // the same transaction that creates the order. Resetting earlier made the
+        // badge disagree with the server on every failure.
+        cart.reset()
+        router.push('/orders')
+        break
+      case 'FAILED':
+        await fetchCart()   // the server still holds the items
+        checkoutError.value = result.reason || 'Checkout failed. Please try again.'
+        break
+      case 'UNKNOWN':
+        checkoutNotice.value = 'We lost track of this checkout — it may still have gone through.'
+        break
+      case 'TIMEOUT':
+        checkoutNotice.value = 'This is taking longer than expected. Your order may still complete.'
+        break
+      // ABANDONED: the user navigated away; say nothing.
+    }
   } catch (e) {
-    checkoutError.value = e.response?.data?.message || 'Checkout failed. Some items may be sold out.'
+    // Only synchronous failures reach here — an empty cart (400), auth, network.
+    // Sold-out is decided asynchronously and shows up as FAILED above, which is
+    // why the old copy here ("some items may be sold out") named the one failure
+    // this branch cannot detect.
+    checkoutError.value = e.response?.data?.error || 'Could not start checkout. Please try again.'
   } finally {
     checkingOut.value = false
   }
 }
 
 onMounted(fetchCart)
+onUnmounted(() => { pollCancelled = true })
 </script>

@@ -20,7 +20,8 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | **fixed** | 2 |
 | F6 | `JwtUtil` javadoc says 15m, config says 5m | doc | **fixed** | 2 |
 | F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | **fixed** | 2 |
-| F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | open | 3 |
+| F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | **fixed** | 3 |
+| F25 | `initiateCheckout` is not idempotent per cart, so a retry can double-order | medium | open | 16 |
 | F9 | Absent checkout key returns PENDING → a correct client polls forever | high | **fixed** | 3 |
 | F11 | `product:{id}:stock` is written and deleted but never read | trivial | **fixed** | 5 |
 | F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | **fixed** | 10 |
@@ -719,7 +720,22 @@ regardless of what the server promises.
 
 ---
 
-## F8 — The frontend never polls checkout status: the async flow is only half-wired — `open` **(highest severity so far)**
+## F8 — The frontend never polls checkout status: the async flow is only half-wired — `fixed` **(highest severity)**
+
+**Fixed** in `e7030e8` (Unit 16, phase 7). Capture the `checkoutId`, poll with backoff
+(400ms → 3s, 45s budget), navigate only on `SUCCESS`, surface `failureReason` on `FAILED`, re-fetch
+the cart on failure, and cancel the loop on unmount.
+
+**Every branch terminates only because F9 landed first** — an absent key is now 404 rather than a
+permanent PENDING, so "we lost track of this" is a decidable state instead of an infinite loop.
+The two findings are one fix in two halves.
+
+The write-up's "consider also making `initiateCheckout` idempotent per cart state" is **not** done —
+logged as **F25**. The UI now makes double-ordering much less likely; it does not make it impossible.
+
+**Verification is weak and worth stating:** there is no frontend test infrastructure in this project
+and Docker was unavailable, so the flow was never exercised against a running app. `npm run build`
+passes; beyond that it is correctness by review.
 
 **Where:** `frontend/src/views/CartView.vue:112-124`
 **Taught in:** Unit 3 (async checkout)
@@ -1001,3 +1017,29 @@ each class via its own `@Value`.
 `ValueOperations` directly, so introducing the store would have required rewriting the mocking in
 all 7 existing consumer tests *in the same change as the F1 correctness fix* — churn against the
 very tests guarding that path. Worth doing as its own change, with the tests migrated deliberately.
+
+---
+
+## F25 - `initiateCheckout` is not idempotent per cart, so a retry can still double-order - `open` (medium)
+
+**Where:** `service/OrderService.java` (`initiateCheckout`), `kafka/consumer/ConsumerIdempotencyGuard.java`
+**Found in:** Unit 16 phase 7, while fixing **F8**
+
+`ConsumerIdempotencyGuard` keys on `checkoutId`, so it dedupes **redelivery of one message**. Each
+call to `initiateCheckout` mints a *fresh* `checkoutId`, so two distinct requests for the same cart
+are two different intents as far as the guard is concerned: both proceed, both deduct stock, both
+create an order.
+
+F8 was the thing making that likely — the user saw no order, so they clicked again. With the UI
+polling and reporting outcomes, accidental retries should become rare. **Rare is not impossible:** a
+double-submit, an impatient refresh, or a flaky network retry all still produce two real orders for
+one intended purchase.
+
+**Fix shape:** derive the idempotency key from something stable about the *intent* rather than
+minting a new one per request - e.g. a hash of (userId, cart contents, cart version), or a
+short-lived `checkout:inflight:{userId}` key set with `SET NX` that returns the existing `checkoutId`
+instead of starting a second checkout. The second is much cheaper and closes the common case.
+
+Note this is the same class of problem as **F17**'s dedup concern, from the other direction: F17 is
+"the guard's key can be evicted", this is "the guard's key is too specific to catch the real
+duplicate".

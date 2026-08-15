@@ -37,8 +37,40 @@ Every topic file uses the same skeleton, so you can skim to the part you need:
 
 | File | Purpose |
 |------|---------|
-| `90-findings.md` | Running defect list. F1–F3 already logged. |
+| `90-findings.md` | Running defect list. **All 22 original findings fixed (Unit 16, 2026-08-15);** F23–F25 opened during that pass and are still open. |
 | `91-drill-questions.md` | Q&A bank + the **final consolidation self-check (PASSED, 2026-08-04)**. Reread the three "second pass" items at the top. |
+
+---
+
+## Unit 16 — the fix-up pass (done, 2026-08-15)
+
+All 22 findings worked in seven phases, one branch and PR per phase, one commit per finding.
+Each finding's write-up in `90-findings.md` carries a **Fixed in `<sha>`** note.
+
+**Four corrections the pass made to the findings themselves** — these are the interesting part,
+because in each case the original write-up was confident and wrong:
+
+1. **F16/F15 needed `spring.data.mongodb.auto-index-creation: true`.** Spring Boot 3 defaults it to
+   `false`, so `@Indexed(expireAfterSeconds=…)` creates nothing. The fix would have been a silent
+   no-op — retention that looks configured and deletes nothing.
+2. **F17's "separate logical database" option cannot work** — `maxmemory`/`maxmemory-policy` are
+   server-wide, not per-DB.
+3. **F17 never considered `volatile-ttl`**, which evicts shortest-TTL-first. It ruled out
+   `volatile-lru` correctly and stopped there; `volatile-ttl` was a one-word fix sitting right next
+   to the option it rejected.
+4. **F1's "not yet reproduced by a test"** is now reproduced, and reproducing it is what confirmed
+   the mechanism was the *consumer's* status write rather than anything in `processCheckout`.
+
+**Deliberately left undone, each with a reason recorded in the relevant finding:** the transactional
+outbox for durable stock compensation (F2/F13's real fix — the counters only make it visible), the
+`orders.user_id` FK, `redis-exporter` for eviction metrics, automatic deploy rollback, and the alert
+contact point.
+
+**Verification honesty:** Docker was unavailable and AWS was destroyed throughout, so everything in
+phases 3 (partly), 5 and 6 landed **without live validation**. Each PR says so explicitly, and
+`90-findings.md` records what to check once there is a running box. The lesson from PR #9 — that a
+rule's resting state can only be learned by watching real state — is the reason to treat those
+phases as unproven rather than done.
 
 ---
 

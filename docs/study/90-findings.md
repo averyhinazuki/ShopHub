@@ -19,7 +19,7 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | F4 | Duplicate username returns 500 instead of 409 | low | **fixed** | 1 |
 | F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | **fixed** | 2 |
 | F6 | `JwtUtil` javadoc says 15m, config says 5m | doc | **fixed** | 2 |
-| F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | open | 2 |
+| F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | **fixed** | 2 |
 | F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | open | 3 |
 | F9 | Absent checkout key returns PENDING → a correct client polls forever | high | **fixed** | 3 |
 | F11 | `product:{id}:stock` is written and deleted but never read | trivial | **fixed** | 5 |
@@ -712,7 +712,20 @@ retries can't double-order.
 
 ---
 
-## F7 — `resolveUserId()` costs a DB query on every authenticated request — `open` (optimization + a 500 that should be a 401)
+## F7 — `resolveUserId()` costs a DB query on every authenticated request — `fixed` (optimization + a 500 that should be a 401)
+
+**Fixed** in `869253b` (Unit 16, phase 4). `uid` claim + an `AuthenticatedUser` principal record;
+both lookups gone. `(b)` fixed too: `UnauthorizedException` → 401.
+
+Three things worth keeping that the write-up didn't cover:
+
+- The principal implements `java.security.Principal` **deliberately** — `Authentication.getName()`
+  checks for that interface, so all three call sites keep working. Without it `getName()` falls
+  through to `toString()` and silently breaks the audit log and order ownership checks.
+- **A fallback to the old lookup is mandatory, not optional.** Tokens minted before the claim carry
+  no `uid`; without the fallback every in-flight session breaks on deploy. It drains in ~5 minutes.
+- **JJWT deserializes a small JSON integer as `Integer`**, so `claims.get("uid", Long.class)` throws.
+  Read it as `Number` and call `longValue()`.
 
 **Where:** `security/SecurityUtils.java:14-17`
 **Found in:** Unit 2 (SecurityContextHolder)

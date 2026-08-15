@@ -335,15 +335,33 @@ class OrderServiceTest {
 
     // ── getCheckoutStatus ─────────────────────────────────────────────────────
 
+    /**
+     * F9. An absent key is absence of information, not an ongoing state — it can
+     * equally mean the id never existed, the 30m TTL expired, or Redis restarted.
+     * Answering PENDING left a correct client with no terminating condition: past
+     * the TTL the key is gone, so PENDING was the permanent answer. 404 makes every
+     * path in the client's state machine terminate.
+     */
     @Test
-    void getCheckoutStatus_keyAbsent_returnsPending() {
+    void getCheckoutStatus_keyAbsent_throwsResourceNotFound() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.get("checkout:unknown")).thenReturn(null);
 
-        CheckoutStatusResponse result = orderService.getCheckoutStatus("unknown");
+        assertThatThrownBy(() -> orderService.getCheckoutStatus("unknown"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("unknown");
+    }
+
+    /** Corrupt is not absent: a bad entry means the checkout is real but unreadable. */
+    @Test
+    void getCheckoutStatus_corruptEntry_returnsPendingNotNotFound() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("checkout:abc")).thenReturn("{not json");
+
+        CheckoutStatusResponse result = orderService.getCheckoutStatus("abc");
 
         assertThat(result.getStatus()).isEqualTo("PENDING");
-        assertThat(result.getCheckoutId()).isEqualTo("unknown");
+        assertThat(result.getCheckoutId()).isEqualTo("abc");
     }
 
     @Test

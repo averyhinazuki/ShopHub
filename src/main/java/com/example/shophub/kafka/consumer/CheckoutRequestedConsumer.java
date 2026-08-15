@@ -103,7 +103,18 @@ public class CheckoutRequestedConsumer {
             CheckoutRequestedEvent event = objectMapper.readValue(message, CheckoutRequestedEvent.class);
             // Don't overwrite a SUCCESS with FAILED — a Redis blip between
             // writeStatus and markProcessed can still route a succeeded item here.
-            String existing = redisTemplate.opsForValue().get("checkout:" + event.getCheckoutId());
+            String existing;
+            try {
+                existing = redisTemplate.opsForValue().get("checkout:" + event.getCheckoutId());
+            } catch (Exception e) {
+                // Can't read the current status, so we can't rule out a SUCCESS sitting
+                // there unread. Writing FAILED blind is the very mistake this guard exists
+                // to prevent, so say nothing rather than say something false.
+                log.error("[Kafka][DLT] Cannot read status for checkoutId={} — leaving it alone "
+                                + "rather than risk overwriting a SUCCESS: {}",
+                        event.getCheckoutId(), e.getMessage());
+                return;
+            }
             if (existing != null) {
                 try {
                     if ("SUCCESS".equals(objectMapper.readValue(existing, CheckoutStatusResponse.class).getStatus())) {
@@ -132,14 +143,33 @@ public class CheckoutRequestedConsumer {
         }
     }
 
+    /**
+     * Records the outcome for the polling client. Best-effort on purpose: this runs
+     * *after* processCheckout has committed, so the order already exists and failing
+     * the message here can only do harm.
+     *
+     * It used to catch JsonProcessingException only, which made a Redis blip
+     * catastrophic: RedisConnectionFailureException escaped, @RetryableTopic
+     * redelivered, loadCartSnapshot found the cart already cleared and threw, retries
+     * exhausted, and @DltHandler — seeing a status still stuck at PENDING, so its
+     * SUCCESS-guard never tripped — wrote FAILED. The customer was told their
+     * checkout failed while a real, payable order sat in the database, and per F8
+     * they would then retry and create a second one.
+     *
+     * The status is a courtesy record, not the source of truth. If it cannot be
+     * written the client gets a 404 from getCheckoutStatus (F9) and is told to check
+     * their orders, which is at least true.
+     */
     void writeStatus(String checkoutId, CheckoutStatusResponse status) {
         try {
             redisTemplate.opsForValue().set(
                     "checkout:" + checkoutId,
                     objectMapper.writeValueAsString(status),
                     Duration.ofMinutes(checkoutStatusTtlMinutes));
-        } catch (JsonProcessingException e) {
-            log.error("[Kafka][checkout-requested] Failed to write status for checkoutId={}", checkoutId);
+        } catch (Exception e) {
+            log.error("[Kafka][checkout-requested] Failed to write status={} for checkoutId={} — "
+                            + "the order itself is unaffected: {}",
+                    status.getStatus(), checkoutId, e.getMessage());
         }
     }
 }

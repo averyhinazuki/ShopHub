@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -100,6 +101,51 @@ class CheckoutRequestedConsumerTest {
                 () -> consumer.handleCheckoutRequested(eventJson, "checkout-123"));
 
         verify(valueOps).set(eq("checkout:checkout-123"), anyString(), any(Duration.class));
+    }
+
+    /**
+     * F1. By the time writeStatus runs the order is fully committed — row written,
+     * items written, cart cleared, stock deducted. A Redis failure there must not
+     * fail the message.
+     *
+     * It used to: writeStatus caught only JsonProcessingException, so a
+     * RedisConnectionFailureException propagated out of the handler, @RetryableTopic
+     * redelivered, loadCartSnapshot found the cart already empty and threw
+     * IllegalArgumentException, retries exhausted, and @DltHandler read a status
+     * still sitting at PENDING so its SUCCESS-guard didn't trip — and wrote FAILED.
+     * The customer was told their checkout failed while a real, payable order existed.
+     */
+    @Test
+    void handleCheckoutRequested_statusWriteFailsAfterOrderCommitted_doesNotRethrow() throws Exception {
+        when(idempotencyGuard.isAlreadyProcessed(any(), any())).thenReturn(false);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        OrderResponse orderResponse = new OrderResponse();
+        orderResponse.setId(99L);
+        when(orderService.processCheckout(1L)).thenReturn(orderResponse);
+        doThrow(new RedisConnectionFailureException("Redis unreachable"))
+                .when(valueOps).set(anyString(), anyString(), any(Duration.class));
+
+        assertThatNoException().isThrownBy(
+                () -> consumer.handleCheckoutRequested(eventJson, "checkout-123"));
+
+        // Must still mark processed: a redelivery would hit an empty cart and fail spuriously.
+        verify(idempotencyGuard).markProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, "checkout-123");
+    }
+
+    /**
+     * F1, DLT side. If the status read fails we cannot rule out a SUCCESS sitting
+     * there unread, so the handler must not fall through and write FAILED over it.
+     */
+    @Test
+    void handleDlt_statusReadFails_doesNotWriteFailed() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("checkout:checkout-123"))
+                .thenThrow(new RedisConnectionFailureException("Redis unreachable"));
+
+        assertThatNoException().isThrownBy(
+                () -> consumer.handleDlt(eventJson, KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC + ".DLT"));
+
+        verify(valueOps, never()).set(anyString(), anyString(), any(Duration.class));
     }
 
     @Test

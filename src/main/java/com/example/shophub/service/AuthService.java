@@ -85,7 +85,7 @@ public class AuthService {
 
     /**
      * Revokes the refresh token from Redis.
-     * The 15m access token expires on its own — no blacklist needed.
+     * The short-lived access token expires on its own — no blacklist needed.
      */
     public void logout(RefreshRequest request) {
         String token = request.getRefreshToken();

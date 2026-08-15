@@ -6,6 +6,7 @@ import com.example.shophub.dto.RefreshRequest;
 import com.example.shophub.dto.RegisterRequest;
 import com.example.shophub.entity.Cart;
 import com.example.shophub.entity.User;
+import com.example.shophub.exception.DuplicateUsernameException;
 import com.example.shophub.repository.jpa.CartRepository;
 import com.example.shophub.repository.jpa.UserRepository;
 import com.example.shophub.security.JwtUtil;
@@ -34,7 +35,7 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
-            throw new RuntimeException("Username already taken");
+            throw new DuplicateUsernameException(request.getUsername());
         }
 
         User user = new User();

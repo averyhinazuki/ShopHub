@@ -12,6 +12,7 @@ import com.example.shophub.kafka.event.CheckoutRequestedEvent;
 import com.example.shophub.kafka.event.OrderCreatedDomainEvent;
 import com.example.shophub.kafka.event.PaymentCompletedDomainEvent;
 import com.example.shophub.kafka.producer.OrderEventProducer;
+import com.example.shophub.metrics.DomainMetrics;
 import com.example.shophub.repository.jpa.*;
 import com.example.shophub.security.SecurityUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -57,6 +58,7 @@ public class OrderService {
     private final StringRedisTemplate        redisTemplate;
     private final ObjectMapper               objectMapper;
     private final OrderEventProducer         kafkaProducer;
+    private final DomainMetrics              metrics;
 
     @Value("${app.checkout.status-ttl-minutes:30}")
     private int checkoutStatusTtlMinutes;
@@ -168,6 +170,11 @@ public class OrderService {
                     cacheService.scheduleSecondDeletion(item.productId());
                     log.info("[Checkout][Compensation] Restored productId={} qty={}", item.productId(), item.qty());
                 } catch (Exception compensationEx) {
+                    // F13: this stock is now permanently lost — the database believes
+                    // fewer units exist than physically do, and nothing self-heals.
+                    // The counter is what makes that discoverable; the durable fix is
+                    // a "restore owed" outbox row drained by a retry job.
+                    metrics.stockRestoreFailedInCheckout();
                     log.error("[Checkout][Compensation] FAILED to restore productId={} qty={}: {}",
                             item.productId(), item.qty(), compensationEx.getMessage());
                 }

@@ -6,6 +6,7 @@ import com.example.shophub.enums.OrderStatus;
 import com.example.shophub.repository.jpa.OrderItemRepository;
 import com.example.shophub.repository.jpa.OrderRepository;
 import com.example.shophub.repository.jpa.ProductInventoryRepository;
+import com.example.shophub.metrics.DomainMetrics;
 import com.example.shophub.repository.mongo.OrderActivityLogRepository;
 import com.example.shophub.service.ProductCacheService;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class OrderExpiryScheduler {
     private final ProductCacheService        cacheService;
     private final RedissonClient             redissonClient;
     private final OrderActivityLogRepository activityLogRepository;
+    private final DomainMetrics              metrics;
 
     /**
      * Fixed-delay scan (no overlap between runs), every
@@ -131,6 +133,11 @@ public class OrderExpiryScheduler {
         try {
             boolean acquired = lock.tryLock(5, 10, TimeUnit.SECONDS);
             if (!acquired) {
+                // The gap below is accepted by design, but accepting it without any
+                // detection also gives up the ability to find out whether it mattered.
+                // This counter is the whole point: "it fired 40 times last night" is
+                // something you can act on; a log.warn nobody reads is not.
+                metrics.stockRestoreFailedInExpiryLockTimeout();
                 log.warn("[Expiry] Could not acquire lock for productId={} — stock NOT restored for orderId={}",
                         productId, orderId);
                 return;
@@ -151,6 +158,7 @@ public class OrderExpiryScheduler {
             log.error("[Expiry] Lock wait interrupted for productId={}", productId);
         } catch (Exception e) {
             if (lock.isHeldByCurrentThread()) lock.unlock();
+            metrics.stockRestoreFailedInExpiryError();
             log.error("[Expiry] Error restoring stock for productId={}: {}", productId, e.getMessage());
         }
     }

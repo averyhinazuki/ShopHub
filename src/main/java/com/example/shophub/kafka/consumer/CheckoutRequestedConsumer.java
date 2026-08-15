@@ -5,6 +5,7 @@ import com.example.shophub.dto.OrderResponse;
 import com.example.shophub.dto.order.CheckoutStatusResponse;
 import com.example.shophub.exception.SoldOutException;
 import com.example.shophub.kafka.event.CheckoutRequestedEvent;
+import com.example.shophub.metrics.DomainMetrics;
 import com.example.shophub.service.OrderService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +40,7 @@ public class CheckoutRequestedConsumer {
     private final ConsumerIdempotencyGuard idempotencyGuard;
     private final StringRedisTemplate      redisTemplate;
     private final ObjectMapper             objectMapper;
+    private final DomainMetrics            metrics;
 
     @Value("${app.checkout.status-ttl-minutes:30}")
     private int checkoutStatusTtlMinutes;
@@ -75,6 +77,7 @@ public class CheckoutRequestedConsumer {
             // Status is written and the cart is cleared, so a retry would only fail
             // on an empty cart — mark processed and let the offset commit.
             safeMarkProcessed(key);
+            metrics.checkoutSucceeded();
             log.info("[Kafka][checkout-requested] checkoutId={} → orderId={}",
                     event.getCheckoutId(), order.getId());
 
@@ -87,6 +90,7 @@ public class CheckoutRequestedConsumer {
                     .failureReason("Sold out: " + e.getMessage())
                     .build());
             safeMarkProcessed(key);
+            metrics.checkoutSoldOut();
 
         } catch (Exception e) {
             // Transient failure (DB down, lock timeout) — rethrow to retry.
@@ -98,6 +102,7 @@ public class CheckoutRequestedConsumer {
 
     @DltHandler
     public void handleDlt(String message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+        metrics.checkoutReachedDlt();
         log.error("[Kafka][DLT] Retries exhausted on topic={}: {}", topic, message);
         try {
             CheckoutRequestedEvent event = objectMapper.readValue(message, CheckoutRequestedEvent.class);
@@ -167,6 +172,7 @@ public class CheckoutRequestedConsumer {
                     objectMapper.writeValueAsString(status),
                     Duration.ofMinutes(checkoutStatusTtlMinutes));
         } catch (Exception e) {
+            metrics.checkoutStatusWriteFailed();
             log.error("[Kafka][checkout-requested] Failed to write status={} for checkoutId={} — "
                             + "the order itself is unaffected: {}",
                     status.getStatus(), checkoutId, e.getMessage());

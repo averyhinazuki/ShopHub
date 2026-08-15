@@ -5,6 +5,7 @@ import com.example.shophub.dto.OrderResponse;
 import com.example.shophub.dto.order.CheckoutStatusResponse;
 import com.example.shophub.exception.SoldOutException;
 import com.example.shophub.kafka.event.CheckoutRequestedEvent;
+import com.example.shophub.metrics.DomainMetrics;
 import com.example.shophub.service.OrderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -36,6 +39,9 @@ class CheckoutRequestedConsumerTest {
     @Mock ValueOperations<String, String> valueOps;
     @InjectMocks CheckoutRequestedConsumer consumer;
 
+    // A real registry, not a mock: Counter.builder(...).register(mock) returns null.
+    // It also lets the tests assert the counts rather than just the interactions.
+    private MeterRegistry registry;
     private ObjectMapper objectMapper;
     private String eventJson;
 
@@ -43,6 +49,8 @@ class CheckoutRequestedConsumerTest {
     void setUp() throws Exception {
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         ReflectionTestUtils.setField(consumer, "objectMapper", objectMapper);
+        registry = new SimpleMeterRegistry();
+        ReflectionTestUtils.setField(consumer, "metrics", new DomainMetrics(registry));
         ReflectionTestUtils.setField(consumer, "checkoutStatusTtlMinutes", 30);
 
         CheckoutRequestedEvent event = CheckoutRequestedEvent.builder()
@@ -130,6 +138,48 @@ class CheckoutRequestedConsumerTest {
 
         // Must still mark processed: a redelivery would hit an empty cart and fail spuriously.
         verify(idempotencyGuard).markProcessed(KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC, "checkout-123");
+    }
+
+    /**
+     * F22. Without these counters every defect in this file would be invisible in
+     * production while the dashboard stayed green.
+     */
+    @Test
+    void counters_recordOutcomesTheDashboardCanSee() throws Exception {
+        when(idempotencyGuard.isAlreadyProcessed(any(), any())).thenReturn(false);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        OrderResponse orderResponse = new OrderResponse();
+        orderResponse.setId(99L);
+        when(orderService.processCheckout(1L)).thenReturn(orderResponse);
+
+        consumer.handleCheckoutRequested(eventJson, "checkout-123");
+
+        assertThat(registry.get("shophub.checkout").tag("outcome", "success").counter().count())
+                .isEqualTo(1.0);
+        assertThat(registry.get("shophub.checkout.dlt").counter().count()).isZero();
+
+        // Anything reaching the DLT exhausted retries and nobody has looked at it.
+        when(valueOps.get("checkout:checkout-123")).thenReturn(null);
+        consumer.handleDlt(eventJson, KafkaTopicConfig.CHECKOUT_REQUESTED_TOPIC + ".DLT");
+
+        assertThat(registry.get("shophub.checkout.dlt").counter().count()).isEqualTo(1.0);
+    }
+
+    /** The F1 path is counted too — an order exists but its status was lost. */
+    @Test
+    void counters_recordAStatusWriteThatCouldNotBePersisted() throws Exception {
+        when(idempotencyGuard.isAlreadyProcessed(any(), any())).thenReturn(false);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        OrderResponse orderResponse = new OrderResponse();
+        orderResponse.setId(99L);
+        when(orderService.processCheckout(1L)).thenReturn(orderResponse);
+        doThrow(new RedisConnectionFailureException("Redis unreachable"))
+                .when(valueOps).set(anyString(), anyString(), any(Duration.class));
+
+        consumer.handleCheckoutRequested(eventJson, "checkout-123");
+
+        assertThat(registry.get("shophub.checkout.status.write.failed").counter().count())
+                .isEqualTo(1.0);
     }
 
     /**

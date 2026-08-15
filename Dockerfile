@@ -20,6 +20,13 @@ FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
+# curl is here for the compose healthcheck against /actuator/health — the JRE
+# image ships neither curl nor wget, so without it the healthcheck cannot run and
+# `docker compose up -d` goes on reporting success for a crash-looping app.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+
 # Copy only the fat JAR produced by Stage 1.
 COPY --from=build /app/target/shop-hub-*.jar app.jar
 

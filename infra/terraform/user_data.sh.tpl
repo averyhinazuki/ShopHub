@@ -73,13 +73,14 @@ fi
 mount "$MOUNT"
 
 # One directory per datastore.
-mkdir -p "$MOUNT/mysql" "$MOUNT/mongo" "$MOUNT/prometheus" "$MOUNT/grafana"
+mkdir -p "$MOUNT/mysql" "$MOUNT/mongo" "$MOUNT/prometheus" "$MOUNT/grafana" "$MOUNT/redis"
 
-# Prometheus (uid 65534) and Grafana (uid 472) don't self-chown their data
-# dirs the way the mysql/mongo images do, so the root-owned bind mounts must
-# be handed to them explicitly or the containers crash on permission denied.
+# Prometheus (uid 65534), Grafana (uid 472) and Redis (uid 999) don't self-chown
+# their data dirs the way the mysql/mongo images do, so the root-owned bind mounts
+# must be handed to them explicitly or the containers crash on permission denied.
 chown 65534:65534 "$MOUNT/prometheus"
 chown 472:472 "$MOUNT/grafana"
+chown 999:999 "$MOUNT/redis"
 
 # ── App directory + compose stack ───────────────────────────────────────
 mkdir -p /opt/shophub

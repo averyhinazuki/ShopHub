@@ -286,6 +286,15 @@ jobs:
       # No SSH: find the instance by tag and relay the command via SSM.
       # `docker compose up -d` only recreates containers whose image changed, so
       # a frontend-only deploy leaves the app untouched.
+      #
+      # The command ends in a smoke test, and that is the point of it. SSM
+      # reporting Success only means the command ran; `docker compose up -d`
+      # returns as soon as containers are *started*, so a bad Flyway migration or
+      # a broken config value used to leave the app crash-looping under
+      # restart: unless-stopped while the pipeline went green on a deploy that had
+      # taken the site down. curl -f exits non-zero on an HTTP error, so a broken
+      # deploy now fails this job. The retries cover JVM warmup rather than
+      # papering over failure — after ~70s of trying, a failure is real.
       - name: Pull images and restart the stack
         run: |
           set -euo pipefail
@@ -304,7 +313,7 @@ jobs:
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --comment "ShopHub deploy ${GITHUB_SHA::7}" \
-            --parameters 'commands=["cd /opt/shophub && docker compose -f docker-compose.cloud.yml --env-file .env pull -q && docker compose -f docker-compose.cloud.yml --env-file .env up -d"]' \
+            --parameters 'commands=["cd /opt/shophub && docker compose -f docker-compose.cloud.yml --env-file .env pull -q && docker compose -f docker-compose.cloud.yml --env-file .env up -d && sleep 20 && curl -fsS --retry 10 --retry-delay 5 --retry-all-errors http://localhost/api/products > /dev/null && echo SMOKE_TEST_OK"]' \
             --query "Command.CommandId" --output text)
 
           # Poll to a terminal state (`aws ssm wait` caps at ~100s; pulls run longer).

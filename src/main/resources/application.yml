@@ -48,6 +48,14 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    listener:
+      # All three topics are created with 3 partitions, but
+      # ConcurrentKafkaListenerContainerFactory defaults to concurrency 1, so one
+      # thread was assigned all three and drained them sequentially — the async
+      # checkout design ran at a third of its intended rate. 3 is the ceiling:
+      # partition count bounds parallelism, so raising it further gains nothing
+      # without adding partitions.
+      concurrency: 3
 
   # Jackson — serialize LocalDateTime as ISO string, not [year,month,day,...] array
   jackson:

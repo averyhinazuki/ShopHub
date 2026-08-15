@@ -69,7 +69,7 @@ class AuthServiceTest {
             u.setRole(Role.USER);
             return u;
         }).when(userRepository).save(any(User.class));
-        when(jwtUtil.generateAccessToken(anyString(), anyString())).thenReturn("access-token");
+        when(jwtUtil.generateAccessToken(anyString(), anyString(), anyLong())).thenReturn("access-token");
         when(jwtUtil.generateRefreshToken(anyString())).thenReturn("refresh-token");
         when(jwtUtil.extractJti("refresh-token")).thenReturn("jti-1");
         when(jwtUtil.getRefreshExpirationMs()).thenReturn(86400000L);

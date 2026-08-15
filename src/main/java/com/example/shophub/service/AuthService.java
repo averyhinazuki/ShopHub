@@ -96,7 +96,8 @@ public class AuthService {
     }
 
     private AuthResponse issueTokenPair(User user) {
-        String accessToken = jwtUtil.generateAccessToken(user.getUsername(), user.getRole().name());
+        String accessToken = jwtUtil.generateAccessToken(
+                user.getUsername(), user.getRole().name(), user.getId());
         String refreshToken = jwtUtil.generateRefreshToken(user.getUsername());
         String jti = jwtUtil.extractJti(refreshToken);
         refreshTokenService.store(jti, user.getId(), jwtUtil.getRefreshExpirationMs());

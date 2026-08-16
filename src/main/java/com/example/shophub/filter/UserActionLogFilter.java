@@ -15,12 +15,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * Logs each authenticated request to MongoDB (user_action_log). Sits after
- * JwtFilter, so the Authentication is already resolved when it runs.
+ * Logs each authenticated request to MongoDB (user_action_log).
  *
- * Runs the chain first, then logs asynchronously (@Async), off the response path.
- * Anonymous requests are skipped — they have no userId. Registered manually in
- * SecurityConfig, not as a @Component, to avoid double registration by Spring Boot.
+ * All of the work happens on the *outbound* pass: doFilter is the first
+ * statement and the SecurityContext is read only after it returns. So position
+ * relative to JwtFilter is not what makes this work — JwtFilter populates the
+ * context downstream either way, and this filter would behave identically if
+ * registered before it. The real constraint is that it must sit *inside*
+ * SecurityContextHolderFilter, which clears the context in a finally block on
+ * the way out; outside that region there would be no Authentication left to read.
+ *
+ * Logs asynchronously (@Async), off the response path. Anonymous requests are
+ * skipped — they have no userId. Registered manually in SecurityConfig, not as
+ * a @Component, to avoid double registration by Spring Boot.
  */
 @Slf4j
 @RequiredArgsConstructor

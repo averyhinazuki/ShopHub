@@ -101,7 +101,7 @@ public class ProductService {
     /**
      * Updates catalog fields only (name, price, description, imageUrl, status).
      * status=INACTIVE soft-deletes: hidden from listings but retained in
-     * order_items history. Invalidates the detail cache; :stock is untouched.
+     * order_items history. Invalidates the detail cache.
      */
     @Transactional
     public ProductResponse updateProduct(Long id, UpdateProductRequest request) {

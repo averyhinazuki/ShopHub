@@ -25,7 +25,12 @@ public class JwtUtil {
         this.refreshExpirationMs = refreshExpirationMs;
     }
 
-    /** Short-lived access token (15m). Carries username + role. */
+    /**
+     * Short-lived access token. Carries username + role. Lifetime comes from
+     * app.jwt.access-expiration-ms — deliberately not restated here, because
+     * that number is the revocation exposure window and a stale copy of it is
+     * exactly what someone would quote wrongly while reasoning about an incident.
+     */
     public String generateAccessToken(String username, String role) {
         return Jwts.builder()
                 .subject(username)
@@ -37,8 +42,8 @@ public class JwtUtil {
     }
 
     /**
-     * Long-lived refresh token (1d). Carries a unique jti so it can be
-     * individually revoked in Redis (refresh:{jti} → userId).
+     * Long-lived refresh token (app.jwt.refresh-expiration-ms). Carries a unique
+     * jti so it can be individually revoked in Redis (refresh:{jti} → userId).
      */
     public String generateRefreshToken(String username) {
         return Jwts.builder()

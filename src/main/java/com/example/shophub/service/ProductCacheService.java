@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * Owns all Redis interactions for the product cache.
  *
- * Keys (shared 60s TTL): product:{id}:detail holds the ProductResponse JSON,
- * product:{id}:stock holds availableStock.
+ * Key: product:{id}:detail (60s TTL) holds the ProductResponse JSON, whose
+ * availableStock field is where readers get stock from.
  *
  * Writers use delayed double deletion: deleteCache before the MySQL write, then
  * scheduleSecondDeletion ~500ms after, to evict anything a concurrent reader
@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 public class ProductCacheService {
 
     static final String DETAIL_KEY = "product:%d:detail";
-    static final String STOCK_KEY  = "product:%d:stock";
     static final long   TTL_SECONDS = 60;
 
     private final StringRedisTemplate stringRedisTemplate;
@@ -50,19 +49,12 @@ public class ProductCacheService {
         }
     }
 
-    public Integer getStock(Long productId) {
-        String val = stringRedisTemplate.opsForValue().get(stockKey(productId));
-        return val != null ? Integer.parseInt(val) : null;
-    }
-
     // ── Write ───────────────────────────────────────────────────────────────
 
     public void setDetail(Long productId, ProductResponse response) {
         try {
             String json = objectMapper.writeValueAsString(response);
             stringRedisTemplate.opsForValue().set(detailKey(productId), json, TTL_SECONDS, TimeUnit.SECONDS);
-            stringRedisTemplate.opsForValue().set(stockKey(productId),
-                    response.getAvailableStock().toString(), TTL_SECONDS, TimeUnit.SECONDS);
         } catch (JsonProcessingException e) {
             log.warn("[Cache] Failed to serialize product:{} — skipping cache write", productId);
         }
@@ -73,8 +65,7 @@ public class ProductCacheService {
     /** First deletion — called synchronously before the MySQL write. */
     public void deleteCache(Long productId) {
         stringRedisTemplate.delete(detailKey(productId));
-        stringRedisTemplate.delete(stockKey(productId));
-        log.debug("[Cache] Evicted product:{} (detail + stock)", productId);
+        log.debug("[Cache] Evicted product:{} detail", productId);
     }
 
     /**
@@ -96,5 +87,4 @@ public class ProductCacheService {
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private String detailKey(Long id) { return String.format(DETAIL_KEY, id); }
-    private String stockKey(Long id)  { return String.format(STOCK_KEY,  id); }
 }

@@ -50,7 +50,12 @@ resume.html
 *.jtl
 *.log
 postman/
-docs/
+# docs/ stays untracked EXCEPT docs/study/ — the study notes and the findings
+# list are worth version history. `docs/*` rather than `docs/` is load-bearing:
+# git never descends into an excluded *directory*, so a bare `docs/` would make
+# the `!docs/study/` re-include unreachable.
+docs/*
+!docs/study/
 .mvn/
 jmeter.log
 mvnw

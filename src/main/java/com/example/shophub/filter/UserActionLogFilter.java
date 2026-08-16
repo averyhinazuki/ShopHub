@@ -1,5 +1,6 @@
 package com.example.shophub.filter;
 
+import com.example.shophub.security.AuthenticatedUser;
 import com.example.shophub.service.UserActionLogService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -48,11 +49,13 @@ public class UserActionLogFilter extends OncePerRequestFilter {
                 && auth.isAuthenticated()
                 && !(auth instanceof AnonymousAuthenticationToken)) {
 
+            // Read the id straight off the principal — no query on the request thread.
+            Long userId = auth.getPrincipal() instanceof AuthenticatedUser u ? u.userId() : null;
             String username = auth.getName();
             String action   = request.getMethod() + " " + request.getRequestURI();
             String ip       = request.getRemoteAddr();
 
-            userActionLogService.logAsync(username, action, ip);
+            userActionLogService.logAsync(userId, username, action, ip);
         }
     }
 }

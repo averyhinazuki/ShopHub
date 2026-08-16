@@ -146,3 +146,103 @@ groups:
               expression: B
               conditions:
                 - evaluator: { type: lt, params: [0.2] }
+
+      # ── Domain rules ────────────────────────────────────────────────────────
+      # noDataState is OK on both, and that is a deliberate difference from the
+      # three rules above rather than a copy-paste slip. Those query up{} and
+      # node_filesystem_*, which always exist, so absence there is genuinely
+      # abnormal. These query application counters, and DomainMetrics registers
+      # every counter at startup precisely so the series exist at zero — but
+      # before the first scrape after a restart, or if the app is down, there is
+      # legitimately nothing to read, and that case is already covered by
+      # "App scrape down". Leaving NoData here would give a second, redundant
+      # standing alert of exactly the shape that made the p99 rule rest in
+      # DatasourceNoData (PR #9).
+
+      - uid: shophub-checkout-dlt-nonempty
+        title: Checkouts reaching the dead-letter topic
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        isPaused: false
+        labels:
+          severity: critical
+        annotations:
+          summary: A checkout exhausted every retry and landed in the DLT.
+          description: >-
+            By definition nobody has looked at these. Each one is a customer whose
+            checkout did not complete, and per F1 a real order may exist anyway --
+            check checkout:{id} in Redis against the orders table before replying
+            to anyone. See docs/study/90-findings.md (F1).
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              expr: sum(increase(shophub_checkout_dlt_total[1h]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource: { type: __expr__, uid: __expr__ }
+              type: reduce
+              reducer: last
+              expression: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource: { type: __expr__, uid: __expr__ }
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: shophub-stock-restore-abandoned
+        title: Stock restoration abandoned
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        isPaused: false
+        labels:
+          severity: warning
+        annotations:
+          summary: Stock was deducted and never restored -- inventory disagrees with orders.
+          description: >-
+            source=checkout is F13: the compensation loop failed and those units are
+            permanently lost. source=expiry is F2: an order was cancelled but its
+            stock was not returned, per item, so a cancellation can be partially
+            restored. Repeated occurrences shrink inventory monotonically until
+            products read sold-out while sitting in the warehouse. Reconcile against
+            product_inventory. See docs/study/90-findings.md (F2, F13).
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              expr: sum(increase(shophub_stock_restore_failed_total[1h]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource: { type: __expr__, uid: __expr__ }
+              type: reduce
+              reducer: last
+              expression: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource: { type: __expr__, uid: __expr__ }
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }

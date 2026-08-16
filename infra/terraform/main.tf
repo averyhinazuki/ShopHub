@@ -83,6 +83,21 @@ resource "aws_instance" "shophub" {
     volume_type = "gp3"
   }
 
+  lifecycle {
+    # data.aws_ssm_parameter.al2023 re-resolves on EVERY plan, and Amazon
+    # publishes new AL2023 images regularly. ami is replace-forcing, so without
+    # this any future apply — for any unrelated reason — could destroy and
+    # recreate the instance simply because a newer image exists: an unplanned OS
+    # upgrade plus ~2 minutes of downtime, arriving in a plan you were reading
+    # for a different purpose.
+    #
+    # Replacement being *cheap* (databases live on a volume outside this state)
+    # is not the same as it being *intended*. The image is now pinned to whatever
+    # the instance was built with, and upgrading is an explicit act:
+    #   terraform apply -replace=aws_instance.shophub
+    ignore_changes = [ami]
+  }
+
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
     app_image              = var.app_image
     ghcr_username          = var.ghcr_username

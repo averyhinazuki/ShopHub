@@ -12,6 +12,7 @@ import com.example.shophub.kafka.event.CheckoutRequestedEvent;
 import com.example.shophub.kafka.event.OrderCreatedDomainEvent;
 import com.example.shophub.kafka.event.PaymentCompletedDomainEvent;
 import com.example.shophub.kafka.producer.OrderEventProducer;
+import com.example.shophub.metrics.DomainMetrics;
 import com.example.shophub.repository.jpa.*;
 import com.example.shophub.security.SecurityUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -57,6 +58,7 @@ public class OrderService {
     private final StringRedisTemplate        redisTemplate;
     private final ObjectMapper               objectMapper;
     private final OrderEventProducer         kafkaProducer;
+    private final DomainMetrics              metrics;
 
     @Value("${app.checkout.status-ttl-minutes:30}")
     private int checkoutStatusTtlMinutes;
@@ -168,6 +170,11 @@ public class OrderService {
                     cacheService.scheduleSecondDeletion(item.productId());
                     log.info("[Checkout][Compensation] Restored productId={} qty={}", item.productId(), item.qty());
                 } catch (Exception compensationEx) {
+                    // F13: this stock is now permanently lost — the database believes
+                    // fewer units exist than physically do, and nothing self-heals.
+                    // The counter is what makes that discoverable; the durable fix is
+                    // a "restore owed" outbox row drained by a retry job.
+                    metrics.stockRestoreFailedInCheckout();
                     log.error("[Checkout][Compensation] FAILED to restore productId={} qty={}: {}",
                             item.productId(), item.qty(), compensationEx.getMessage());
                 }
@@ -178,12 +185,28 @@ public class OrderService {
 
     /**
      * Returns current checkout status from Redis.
-     * Falls back to PENDING if key is absent or cannot be deserialized.
+     *
+     * An absent key is 404, not PENDING. Absence has at least four causes — the
+     * work is genuinely queued, the id never existed (typo, stale bookmark,
+     * forged value), the 30-minute TTL expired, or Redis restarted — and only the
+     * first is actually pending. Reporting PENDING for all four left a correct
+     * client with no terminating condition: past the TTL the key is gone, so
+     * PENDING was the permanent answer and a client that stops only on a terminal
+     * status polls forever.
+     *
+     * The TTL is not the bug — without it Redis accumulates a key per checkout
+     * until it OOMs. The bug was treating absence as an ongoing state rather than
+     * as absence of information.
+     *
+     * A key that is present but unreadable is a different case: the checkout is
+     * real, we just can't read its record, so that still answers PENDING.
      */
     public CheckoutStatusResponse getCheckoutStatus(String checkoutId) {
         String json = redisTemplate.opsForValue().get("checkout:" + checkoutId);
         if (json == null) {
-            return CheckoutStatusResponse.builder().checkoutId(checkoutId).status("PENDING").build();
+            throw new ResourceNotFoundException(
+                    "No checkout found for id " + checkoutId
+                    + " — it may have expired; check your orders");
         }
         try {
             return objectMapper.readValue(json, CheckoutStatusResponse.class);

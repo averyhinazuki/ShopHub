@@ -27,7 +27,14 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(orderService.initiateCheckout());
     }
 
-    /** GET /api/orders/checkout-status/{checkoutId} — polls async checkout result */
+    /**
+     * GET /api/orders/checkout-status/{checkoutId} — polls async checkout result.
+     *
+     * Every path terminates: PENDING means keep polling, SUCCESS/FAILED means stop,
+     * and 404 means the record is gone (expired, or never existed) — stop and check
+     * the order list. Clients should still bound their own polling with a max
+     * attempt count and backoff.
+     */
     @GetMapping("/checkout-status/{checkoutId}")
     public ResponseEntity<CheckoutStatusResponse> checkoutStatus(@PathVariable String checkoutId) {
         return ResponseEntity.ok(orderService.getCheckoutStatus(checkoutId));

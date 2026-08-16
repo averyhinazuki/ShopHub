@@ -20,6 +20,11 @@ FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
+# No curl install needed: eclipse-temurin:21-jre already ships curl at
+# /usr/bin/curl, which is what the compose healthcheck against /actuator/health
+# uses. Verified on a running container — an earlier version of this file added
+# `apt-get install curl` on the assumption the JRE image lacked it. It doesn't.
+
 # Copy only the fat JAR produced by Stage 1.
 COPY --from=build /app/target/shop-hub-*.jar app.jar
 

@@ -13,33 +13,48 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 
 | # | Finding | Severity | Status | Unit |
 |---|---|---|---|---|
-| F1 | DLT reports FAILED for a checkout that created a real order | high | open | 8 |
-| F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | known-deliberate | 9 |
-| F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | open | 5 |
-| F4 | Duplicate username returns 500 instead of 409 | low | open | 1 |
+| F1 | DLT reports FAILED for a checkout that created a real order | high | **fixed** | 8 |
+| F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | **fixed** (now detectable) | 9 |
+| F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | **fixed** | 5 |
+| F4 | Duplicate username returns 500 instead of 409 | low | **fixed** | 1 |
 | F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | **fixed** | 2 |
 | F6 | `JwtUtil` javadoc says 15m, config says 5m | doc | **fixed** | 2 |
-| F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | open | 2 |
-| F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | open | 3 |
-| F9 | Absent checkout key returns PENDING → a correct client polls forever | high | open | 3 |
+| F7 | `resolveUserId()` does a DB query per request; 500 for deleted user | medium | **fixed** | 2 |
+| F8 | **Frontend never polls checkout status — async flow half-wired** | **highest** | **fixed** | 3 |
+| F25 | `initiateCheckout` is not idempotent per cart, so a retry can double-order | medium | open | 16 |
+| F9 | Absent checkout key returns PENDING → a correct client polls forever | high | **fixed** | 3 |
 | F11 | `product:{id}:stock` is written and deleted but never read | trivial | **fixed** | 5 |
-| F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | open | 10 |
+| F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | **fixed** | 10 |
 | F20 | Empty `terraform.tfstate` committed at repo root (no secrets) | trivial | **fixed** | 13 |
-| F22 | No domain metrics - every finding above would be invisible in prod | medium | open | 14 |
-| F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | open | 13 |
-| F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | open | 12 |
-| F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | open | 11 |
-| F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | open | 11 |
-| F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | open | 10 |
-| F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | open | 8 |
-| F13 | Checkout compensation failure is logged, never retried or alerted | high | open | 7 |
-| F12 | Redis outage makes product pages 500 instead of degrading | medium | open | 5 |
-| F10 | `orders.user_id` has no index and no FK constraint | medium | open | 4 |
+| F22 | No domain metrics - every finding above would be invisible in prod | medium | **fixed** | 14 |
+| F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | **fixed** | 13 |
+| F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | **fixed** | 12 |
+| F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | **fixed** | 11 |
+| F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | **fixed** | 11 |
+| F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | **fixed** | 10 |
+| F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | **fixed** | 8 |
+| F13 | Checkout compensation failure is logged, never retried or alerted | high | **fixed** (now detectable) | 7 |
+| F12 | Redis outage makes product pages 500 instead of degrading | medium | **fixed** | 5 |
+| F10 | `orders.user_id` has no index and no FK constraint | medium | **fixed** (indexes; FK deferred) | 4 |
+| F23 | Bare `RuntimeException` still thrown at four service sites → 500s | low-med | open | 16 |
+| F24 | The `checkout:{id}` record is hand-rolled in three classes | low | open | 16 |
+| F26 | A degraded (Redis-down) product read takes ~4.8s because Redisson retries | medium | open | 16 |
+| F27 | A crash-looping container sits at health=`starting` forever, never `unhealthy` | medium | open | 16 |
+| F28 | `.dockerignore` excludes `target`, so `docker-compose.override.yml` cannot build | low | open | 16 |
 
 
 ---
 
-## F1 — DLT can report FAILED for a checkout that created a real order — `open`
+## F1 — DLT can report FAILED for a checkout that created a real order — `fixed`
+
+**Fixed** in `8f091bf` (Unit 16, phase 2). `writeStatus` now swallows any exception, not just
+`JsonProcessingException` — the order is committed by the time it runs, so failing the message can
+only cause harm. The DLT's status *read* is wrapped separately and **returns without writing** on
+failure: if the current status can't be read, a SUCCESS may be sitting there unread, and writing
+FAILED blind is the exact mistake the SUCCESS-guard exists to prevent.
+
+Now reproduced by a test (`handleCheckoutRequested_statusWriteFailsAfterOrderCommitted_doesNotRethrow`),
+closing the write-up's "Not yet reproduced by a test".
 
 **Where:** `src/main/java/com/example/shophub/kafka/consumer/CheckoutRequestedConsumer.java`
 **Taught in:** Unit 8 (Kafka)
@@ -79,11 +94,17 @@ now disagree." Wrong — on the retry, `loadCartSnapshot` throws *before* any de
 reflect a genuine sale. The damage is purely that the customer is misinformed — and, per **F8**,
 they'll likely retry and create a second real order.
 
-Not yet reproduced by a test.
+~~Not yet reproduced by a test.~~ Reproduced and guarded — see the fix note at the top.
 
 ---
 
-## F2 — `OrderExpiryScheduler` loses stock permanently — `known-deliberate`, but undetectable
+## F2 — `OrderExpiryScheduler` loses stock permanently — `fixed` (detection added; gap still accepted)
+
+**Fixed** in `92d079e` (Unit 16, phase 5), on exactly the basis the write-up argued for: the gap
+itself stays accepted, but `shophub_stock_restore_failed_total{source="expiry"}` plus an alert
+means you can now learn you have hit it. Both branches are counted separately
+(`reason=lock_timeout` and `reason=error`). The durable fix — the transactional outbox shared with
+**F13** — remains deliberately out of scope.
 
 **Where:** `scheduler/OrderExpiryScheduler.java:126-136`, `:152-155`
 **Taught in:** Unit 9
@@ -134,7 +155,18 @@ decision that is otherwise defensible. The durable fix is the same transactional
 
 ---
 
-## F22 - The dashboard measures infrastructure only; every logged finding would be invisible - `open` (medium)
+## F22 - The dashboard measures infrastructure only; every logged finding would be invisible - `fixed` (medium)
+
+**Fixed** in `92d079e` (Unit 16, phase 5). A `DomainMetrics` component with seven counters, a
+"Domain" dashboard row (4 panels) and two alert rules. Items 1-3 of the write-up's priority list
+all landed; **item 4 (`redis_evicted_keys_total`) is deferred** — it needs a `redis-exporter`
+container and `user_data` is at ~12.1 KB against EC2's 16 KB limit.
+
+**The design detail that matters:** counters are registered in the constructor, not lazily at the
+call site. A counter that has never incremented **produces no time series**, so a rule querying it
+reads NoData rather than 0 — the same shape that left the p99 rule in `DatasourceNoData` until
+PR #9. Registering up front makes "nothing went wrong" read as 0 rather than as absence, and is
+why both new rules can safely use `noDataState: OK`.
 
 **Where:** `infra/monitoring/dashboards/shophub.json` (15 panels), `provisioning/alerting/rules.yml` (3 rules)
 **Taught in:** Unit 14
@@ -174,7 +206,26 @@ Grafana and looks.
 
 ---
 
-## F21 - Any `terraform apply` can silently replace the instance, because the AMI re-resolves - `known-deliberate`
+## F21 - Any `terraform apply` can silently replace the instance, because the AMI re-resolves - `fixed`
+
+**Fixed** in `9be7233` (Unit 16, phase 6). `lifecycle { ignore_changes = [ami] }`, so OS upgrades
+become an explicit `terraform apply -replace=aws_instance.shophub`.
+
+### LIVE-VALIDATED 2026-08-16 - applied, proven both ways, destroyed
+
+The stack was applied for real (instance `i-0b13d318a1fe7e008`, EIP 52.4.114.4), then the SSM
+parameter was temporarily pointed at a *different* AL2023 image so the resolved AMI genuinely
+changed. Same changed AMI, the lifecycle block the only variable:
+
+| Config | `terraform plan` result |
+|---|---|
+| **with** `ignore_changes = [ami]` | **`No changes.`** |
+| **without** it | `aws_instance.shophub must be replaced` - `ami ... # forces replacement`, cascading to `aws_eip_association` and `aws_volume_attachment` |
+
+That is the finding's scenario reproduced exactly: instance destroyed and recreated, EIP
+re-associated, data volume detached and reattached - an unplanned OS upgrade plus downtime, from a
+plan you were reading for another reason. `main.tf` was restored and re-verified as a no-op plan
+before teardown; the persistent volume and EIP survived the destroy as designed.
 
 **Where:** `infra/terraform/main.tf:52-54` (data source), `:65-66` (consumed by the instance)
 **Taught in:** Unit 13
@@ -233,7 +284,28 @@ recurrence.
 
 ---
 
-## F19 - The deploy verifies the command ran, not that the app works - `open` (medium)
+## F19 - The deploy verifies the command ran, not that the app works - `fixed` (medium)
+
+**Fixed** in `9be7233` (Unit 16, phase 6). Both fixes 1 and 2 landed: a `curl -fsS` smoke test
+appended to the SSM command, and an `app` healthcheck in compose. Fix 3 (automatic rollback) stays
+out of scope: the SHA-tagged images exist but compose references `:latest` everywhere.
+
+### LIVE-VALIDATED 2026-08-16 - and it corrected two of my own claims
+
+**Proven:** a deliberately broken deploy (bad datasource) crash-looped under
+`restart: unless-stopped`, `docker compose up -d` still exited 0 - the old failure mode exactly -
+and the new smoke test exited **52**, failing the job. On the real EC2 box the same curl returned
+`SMOKE_TEST_OK` against a healthy stack.
+
+**Correction 1 - I was wrong that the JRE image lacks curl.** `eclipse-temurin:21-jre` ships it at
+`/usr/bin/curl`; the untouched GHCR image passed the healthcheck on the live box. The
+`apt-get install curl` added to the Dockerfile was **unnecessary** and has been removed. It also
+means there is no deploy-ordering hazard between the compose change and the image change.
+
+**Correction 2 - the healthcheck cannot do the job the finding implies.** Watching the broken
+container, health stayed `starting` and never became `unhealthy`, because each restart resets
+`start_period`. **The smoke test is the load-bearing half of this fix, not the healthcheck.**
+Logged as **F27**.
 
 **Where:** `.github/workflows/ci.yml:289-326`; `docker-compose.cloud.yml` app service has no healthcheck
 **Taught in:** Unit 12
@@ -265,7 +337,37 @@ and **the pipeline goes green on a deploy that took the site down.**
 
 ---
 
-## F18 - `mem_limit` is set on the three stateless services and none of the five stateful ones - `open` (medium)
+## F18 - `mem_limit` is set on the three stateless services and none of the five stateful ones - `fixed` (medium)
+
+**Fixed** in `9be7233` (Unit 16, phase 6). All nine services capped, 3200 MiB of 4096; header and
+the stale "both stateful services bind-mount" comment corrected (it is five now).
+
+**The constraint the write-up didn't mention:** the compose file ships inside `user_data`, against
+EC2's **16 KB limit**. Documenting the reasoning in the file has a size cost it does not have in
+ordinary code — see **F28**.
+
+### LIVE-VALIDATED 2026-08-16, and the first sizing was WRONG
+
+The whole cloud stack was run locally against the real limits and each container's RSS measured.
+Two of the five new caps were too small, and one was too generous:
+
+| Service | First cap | Measured | Corrected |
+|---|---|---|---|
+| **mysql** | 512m | **456 MiB idle, 89%** — on an *empty* DB, before any of the 50 Hikari connections allocated per-connection buffers | **768m** |
+| **app** | 768m | 559 MiB at 75% with the heap at only **187 of 512 MiB**; non-heap alone is 190 MiB, so a full heap lands near 900 MiB | **1024m** |
+| mongodb | 512m | 69 MiB empty (WT cache caps growth) | 384m |
+| prometheus | 256m | 43 MiB (17%) | 192m |
+| grafana | 256m | 50 MiB (19%) | 192m |
+| kafka | 512m | 335 MiB (65%) | unchanged |
+| redis | 192m | 3.9 MiB | unchanged |
+
+Total is still 3456 MiB, 640 MiB for the host, and after correction nothing exceeds 65%.
+
+**The lesson is the finding turning on itself.** F18's entire argument is that MySQL is the big,
+attractive target the OOM killer picks, so it must be capped deterministically. Sizing that cap by
+arithmetic rather than measurement set it at 512m against a 456 MiB idle footprint — a cap that
+would have OOM-killed MySQL under load, causing precisely the outcome the finding set out to
+prevent. **A limit derived from reasoning is a hypothesis; only measurement makes it a limit.**
 
 **Where:** `docker-compose.cloud.yml` - `mem_limit` appears only at `:129`, `:144`, `:160`
 **Taught in:** Unit 11
@@ -302,7 +404,39 @@ four now. Prometheus (`:149`) and Grafana (`:164`) persist to `/data` too. The c
 
 ---
 
-## F17 - Redis `allkeys-lru` can evict idempotency keys, refresh tokens and checkout status - `open` (high)
+## F17 - Redis `allkeys-lru` can evict idempotency keys, refresh tokens and checkout status - `fixed` (high)
+
+**Fixed** in `9be7233` (Unit 16, phase 6): `--maxmemory-policy volatile-ttl`, plus `appendonly yes`
+and a `/data/redis` bind mount. **Two corrections to what is written below:**
+
+1. **Option 2 is wrong as stated.** A different Redis *logical database* cannot have its own
+   eviction settings — `maxmemory` and `maxmemory-policy` are **server-wide**. Only a separate
+   *instance* gives separate policy.
+2. **`volatile-ttl` was never considered, and it is the answer.** The note below correctly rules out
+   `volatile-lru` (all four types carry TTLs, so it degenerates to `allkeys-lru`) but `volatile-ttl`
+   orders by **shortest remaining TTL**, not recency — and the actual ladder is cache 60s → checkout
+   30m → dedup 24h → refresh 1d, exactly the priority order wanted. One word, no new infrastructure.
+
+`maxmemory` stays at 128mb on purpose: raising it only delays the problem and spends budget F18
+needs. Redis samples rather than sorts, so this is a strong heuristic, not a guarantee — the durable
+fixes (separate instance, or dedup as a MySQL unique index) remain open.
+
+### LIVE-VALIDATED 2026-08-16 — the correction is empirically confirmed
+
+3000 cache keys (60s TTL) flooded against the three load-bearing key types at their real TTLs
+(checkout 30m, dedup 24h, refresh 1d), `maxmemory 4mb`, same load under each policy:
+
+| Policy | evicted | cache surviving | refresh token | dedup key | checkout status |
+|---|---|---|---|---|---|
+| `allkeys-lru` (before) | 1540 | 1440 | **evicted** | **evicted** | **evicted** |
+| `volatile-ttl` (after) | 1538 | 1439 | survived | survived | survived |
+
+Identical cache headroom, all three state keys preserved. The `allkeys-lru` row is the finding's
+predicted failure reproduced exactly: under nothing more than memory pressure, the user is logged
+out, the checkout is stranded, and the dedup guard is gone so a redelivery double-orders.
+
+Also confirmed as deployed: policy `volatile-ttl`, `maxmemory 134217728`, `appendonly yes`, and the
+AOF directory created on the `/data` bind mount.
 
 **Where:** `docker-compose.cloud.yml:65` - `command: --maxmemory 128mb --maxmemory-policy allkeys-lru`
 **Taught in:** Unit 11
@@ -340,7 +474,18 @@ the cache is fine; losing the other three is the same damage as above, all at on
 
 ---
 
-## F16 - MongoDB collections have no TTL, so an audit log can kill MySQL - `open` (high)
+## F16 - MongoDB collections have no TTL, so an audit log can kill MySQL - `fixed` (high)
+
+**Fixed** in `980fc36` (Unit 16, phase 3). TTL indexes: 30 days on `user_action_log`, 365 on
+`order_activity_log`.
+
+**THE FINDING WAS INCOMPLETE, and the omission would have made the fix a silent no-op:**
+`spring.data.mongodb.auto-index-creation` was unset and **Spring Boot 3 defaults it to `false`**,
+so `@Indexed(expireAfterSeconds=…)` creates nothing on its own. The collections would have grown
+forever while appearing to have retention. Now set explicitly in `application.yml`.
+
+Second thing worth knowing: the TTL works because Spring Data stores `LocalDateTime` as a BSON
+date. A TTL index on a *string* field is accepted silently and never deletes anything.
 
 **Where:** `document/UserActionLog.java`, `document/OrderActivityLog.java` - no `@Indexed(expireAfterSeconds=...)`
 **Taught in:** Unit 10
@@ -368,7 +513,11 @@ Pick retention per collection - `user_action_log` is high-volume and low-value (
 
 ---
 
-## F15 - Neither Mongo collection has an index, so reading the audit trail is a full scan - `open` (medium)
+## F15 - Neither Mongo collection has an index, so reading the audit trail is a full scan - `fixed` (medium)
+
+**Fixed** in `980fc36` (Unit 16, phase 3), alongside F16 as the write-up predicted. Compound
+`(userId, timestamp)` and `(orderId, timestamp)`, plus `orderId` on its own; each TTL index doubles
+as the timestamp index. Same `auto-index-creation` caveat as F16 — see there.
 
 **Where:** both `document/*.java` (no `@Indexed`/`@CompoundIndex`), both `repository/mongo/*.java`
 **Taught in:** Unit 10
@@ -393,7 +542,12 @@ Note the TTL index from **F16** would also serve as a `timestamp` index, so the 
 
 ---
 
-## F14 - Three partitions, one consumer thread: the async drain rate is 1/3 of design - `open` (medium)
+## F14 - Three partitions, one consumer thread: the async drain rate is 1/3 of design - `fixed` (medium)
+
+**Fixed** in `a09361f` (Unit 16, phase 3). `spring.kafka.listener.concurrency: 3`. The caveat was
+understood before turning it up: concurrent processing of different partitions is now real rather
+than theoretical, widening the check-then-act window in `ConsumerIdempotencyGuard`. Still safe —
+different partitions hold different checkoutIds. NOT VERIFIED: needs a running broker.
 
 **Where:** no `spring.kafka.listener.concurrency` anywhere; `config/KafkaTopicConfig.java:20,28,36`
 **Taught in:** Unit 8
@@ -427,7 +581,12 @@ different checkoutIds - but worth understanding before turning it up.
 
 ---
 
-## F13 - Checkout compensation failure is logged and then forgotten - `open` (high)
+## F13 - Checkout compensation failure is logged and then forgotten - `fixed` (detection added) (high)
+
+**Fixed** in `92d079e` (Unit 16, phase 5) at strength level 3 of the write-up's own list —
+`shophub_stock_restore_failed_total{source="checkout"}` plus an alert rule. Levels 1 and 2
+(durable compensation via outbox, reconciliation job) remain open and are the real fix; this makes
+the problem visible rather than solving it.
 
 **Where:** `service/OrderService.java:163-176` (the catch at `:170-173`)
 **Taught in:** Unit 7
@@ -464,7 +623,12 @@ is best-effort everywhere.**
 
 ---
 
-## F12 - A Redis outage turns product browsing into 500s - `open` (medium)
+## F12 - A Redis outage turns product browsing into 500s - `fixed` (medium)
+
+**Fixed** in `43a0dbd` (Unit 16, phase 2). `getDetail` treats a connection failure as a miss;
+`setDetail`/`deleteCache` log and return. `deleteCache` matters most — it runs *before* the MySQL
+write it protects, and the entry carries a 60s TTL, so the worst case is bounded staleness rather
+than a failed write. New `ProductCacheServiceTest` covers all three paths.
 
 **Where:** `service/ProductCacheService.java:41-78`
 **Taught in:** Unit 5
@@ -514,7 +678,12 @@ the Redis write and delete traffic for the product cache.
 
 ---
 
-## F10 — `orders.user_id` has no index and no foreign key constraint — `open` (perf + integrity)
+## F10 — `orders.user_id` has no index and no foreign key constraint — `fixed` (indexes) (perf + integrity)
+
+**Fixed** in `2050e29` (Unit 16, phase 3). `V4__order_indexes.sql` adds `idx_orders_user` and
+`idx_orders_status_created`. **The FK is deliberately still open** — it needs existing rows proven
+clean and it constrains user deletion, so it is a separate decision. NOT VERIFIED against MySQL:
+DDL only, Docker unavailable, no query plan checked.
 
 **Where:** `db/migration/V1__init.sql` (orders table), `entity/Order.java:19-20`
 **Found in:** Unit 4 (ORM basics)
@@ -567,7 +736,12 @@ matter at scale.**
 
 ---
 
-## F9 — An absent checkout key returns PENDING, so a correct client can poll forever — `open` (high)
+## F9 — An absent checkout key returns PENDING, so a correct client can poll forever — `fixed` (high)
+
+**Fixed** in `a58bcf1` (Unit 16, phase 2). Absent key → `ResourceNotFoundException` → 404. Both
+"also worth doing" items landed too: the producer's failure callback now writes
+`FAILED("could not be queued")`, and the client-side polling bound is part of F8's fix. A key that
+is present but *corrupt* deliberately still answers PENDING — corrupt is not absent.
 
 **Where:** `service/OrderService.java:183-194` (and `:102-108`, `producer/OrderEventProducer.java:73-93`)
 **Taught in:** Unit 3 (async checkout)
@@ -617,7 +791,22 @@ regardless of what the server promises.
 
 ---
 
-## F8 — The frontend never polls checkout status: the async flow is only half-wired — `open` **(highest severity so far)**
+## F8 — The frontend never polls checkout status: the async flow is only half-wired — `fixed` **(highest severity)**
+
+**Fixed** in `e7030e8` (Unit 16, phase 7). Capture the `checkoutId`, poll with backoff
+(400ms → 3s, 45s budget), navigate only on `SUCCESS`, surface `failureReason` on `FAILED`, re-fetch
+the cart on failure, and cancel the loop on unmount.
+
+**Every branch terminates only because F9 landed first** — an absent key is now 404 rather than a
+permanent PENDING, so "we lost track of this" is a decidable state instead of an infinite loop.
+The two findings are one fix in two halves.
+
+The write-up's "consider also making `initiateCheckout` idempotent per cart state" is **not** done —
+logged as **F25**. The UI now makes double-ordering much less likely; it does not make it impossible.
+
+**Verification is weak and worth stating:** there is no frontend test infrastructure in this project
+and Docker was unavailable, so the flow was never exercised against a running app. `npm run build`
+passes; beyond that it is correctness by review.
 
 **Where:** `frontend/src/views/CartView.vue:112-124`
 **Taught in:** Unit 3 (async checkout)
@@ -666,7 +855,20 @@ retries can't double-order.
 
 ---
 
-## F7 — `resolveUserId()` costs a DB query on every authenticated request — `open` (optimization + a 500 that should be a 401)
+## F7 — `resolveUserId()` costs a DB query on every authenticated request — `fixed` (optimization + a 500 that should be a 401)
+
+**Fixed** in `869253b` (Unit 16, phase 4). `uid` claim + an `AuthenticatedUser` principal record;
+both lookups gone. `(b)` fixed too: `UnauthorizedException` → 401.
+
+Three things worth keeping that the write-up didn't cover:
+
+- The principal implements `java.security.Principal` **deliberately** — `Authentication.getName()`
+  checks for that interface, so all three call sites keep working. Without it `getName()` falls
+  through to `toString()` and silently breaks the audit log and order ownership checks.
+- **A fallback to the old lookup is mandatory, not optional.** Tokens minted before the claim carry
+  no `uid`; without the fallback every in-flight session breaks on deploy. It drains in ~5 minutes.
+- **JJWT deserializes a small JSON integer as `Integer`**, so `claims.get("uid", Long.class)` throws.
+  Read it as `Number` and call `longValue()`.
 
 **Where:** `security/SecurityUtils.java:14-17`
 **Found in:** Unit 2 (SecurityContextHolder)
@@ -754,7 +956,11 @@ Fix by correcting the comment to describe the outbound-pass behavior.
 
 ---
 
-## F4 — Duplicate username registration returns 500 instead of 409 — `open`
+## F4 — Duplicate username registration returns 500 instead of 409 — `fixed`
+
+**Fixed** in `72c8662` (Unit 16, phase 2). `DuplicateUsernameException` → 409. The write-up's
+"worth grepping for other bare `throw new RuntimeException(...)` sites" was done and the results
+are logged as **F23** rather than fixed piecemeal here.
 
 **Where:** `service/AuthService.java:37`, `exception/GlobalExceptionHandler.java:51-54`
 **Found in:** Unit 1 (HTTP status semantics) — found by reasoning from the 4xx/5xx contract
@@ -780,7 +986,17 @@ other bare `throw new RuntimeException(...)` sites in service code at the same t
 
 ---
 
-## F3 — Second deletions fall arbitrarily behind: a 500ms sleep caps the pool at ~16/sec — `open` (REVISED)
+## F3 — Second deletions fall arbitrarily behind: a 500ms sleep caps the pool at ~16/sec — `fixed` (REVISED)
+
+**Fixed** in `84a8ac8` (Unit 16, phase 3). `TaskScheduler.schedule(…, +500ms)`; `cacheEvictExecutor`
+deleted. Two traps handled while doing it, neither in the original write-up:
+
+1. `ScheduledAnnotationBeanPostProcessor` resolves a `TaskScheduler` **by type**, so introducing one
+   would have silently moved `OrderExpiryScheduler`'s `@Scheduled` onto it. `AsyncConfig` now declares
+   two named beans; `@Scheduled` falls back to the one named `taskScheduler`.
+2. Lombok's `@RequiredArgsConstructor` does **not** copy `@Qualifier` onto generated constructor
+   parameters, and there are now two `TaskScheduler` beans. `ProductCacheService` gets an explicit
+   constructor rather than risk binding to the wrong one — a failure that would only appear under load.
 
 **Where:** `service/ProductCacheService.java:85-94`, `config/AsyncConfig.java:17-27`
 **Taught in:** Unit 5
@@ -815,3 +1031,185 @@ blocks 500ms per eviction.
 
 **Fix:** use a `ScheduledExecutorService` (`schedule(task, 500, MILLISECONDS)`) so the delay costs
 no thread at all. Capacity then becomes "how fast can Redis accept DELETEs," which is enormous.
+
+---
+
+## F23 - Bare `RuntimeException` is still thrown at four service sites - `open` (low-medium)
+
+**Where:** `service/AuthService.java:72`, `:78`; `service/OrderService.java:139`, `:156`
+**Found in:** Unit 16 phase 2, while fixing **F4**
+
+F4's write-up said to grep for other bare `throw new RuntimeException(...)` sites in service code.
+Done — there are four, and every one lands in `GlobalExceptionHandler:51`'s catch-all as a **500**:
+
+| Site | Condition | Should be |
+|---|---|---|
+| `AuthService.refresh:72` | signature invalid / expired | **401** |
+| `AuthService.refresh:78` | token revoked or unknown jti | **401** |
+| `OrderService.processCheckout:139` | Redisson `tryLock` timed out | **503** (retryable) |
+| `OrderService.processCheckout:156` | lock wait interrupted | **503** (retryable) |
+
+The two auth ones are the more serious: a client cannot distinguish "your session ended, log in
+again" from "the server is broken", so a correct client has no way to know it should re-authenticate.
+
+The two checkout ones are subtler and interact with **F1**. `processCheckout` runs on the Kafka
+listener thread, so its exception is not shaped into an HTTP status at all — it is caught by
+`CheckoutRequestedConsumer`'s generic handler and **rethrown to trigger a retry**, which is the
+right behaviour. So the fix there is *not* simply a mapped exception type: a dedicated
+`LockUnavailableException` would make the retry decision explicit rather than incidental, and would
+stop the same throw producing a 500 if `processCheckout` is ever called synchronously.
+
+**Deliberately not fixed alongside F4.** These are one habit, not four bugs, and the right shape is
+probably a small status-carrying exception base with one handler reading it — the same conclusion
+DocPlatform reached for its F33/F5 pair. Fixing them one at a time is what produced this spread.
+
+---
+
+## F24 - The `checkout:{id}` record is hand-rolled in three classes - `open` (low)
+
+**Where:** `service/OrderService.java` (write PENDING, read status),
+`kafka/consumer/CheckoutRequestedConsumer.java` (`writeStatus`, `handleDlt`'s read),
+`kafka/producer/OrderEventProducer.java` (`markCheckoutFailed`, added in phase 2)
+**Found in:** Unit 16 phase 2
+
+The key format `"checkout:" + id`, the `status-ttl-minutes` TTL, the Jackson round-trip and the
+"never throw on a Redis failure" rule are now duplicated across **three** classes. Phase 2 had to
+apply the same catch-broadening in each of them independently, and adding the producer's
+`markCheckoutFailed` meant copying the format and TTL a third time.
+
+Nothing is wrong today — the copies agree. The risk is that they are only kept in agreement by
+someone remembering to update all three, and the TTL in particular is read from config separately in
+each class via its own `@Value`.
+
+**Fix:** a `CheckoutStatusStore` owning the key, the TTL, serialization, the absent → 404 rule
+(**F9**) and the never-throw rule (**F1**). Roughly 40 lines, and it deletes more than it adds.
+
+**Why it was not done in phase 2:** `CheckoutRequestedConsumerTest` mocks `StringRedisTemplate` and
+`ValueOperations` directly, so introducing the store would have required rewriting the mocking in
+all 7 existing consumer tests *in the same change as the F1 correctness fix* — churn against the
+very tests guarding that path. Worth doing as its own change, with the tests migrated deliberately.
+
+---
+
+## F25 - `initiateCheckout` is not idempotent per cart, so a retry can still double-order - `open` (medium)
+
+**Where:** `service/OrderService.java` (`initiateCheckout`), `kafka/consumer/ConsumerIdempotencyGuard.java`
+**Found in:** Unit 16 phase 7, while fixing **F8**
+
+`ConsumerIdempotencyGuard` keys on `checkoutId`, so it dedupes **redelivery of one message**. Each
+call to `initiateCheckout` mints a *fresh* `checkoutId`, so two distinct requests for the same cart
+are two different intents as far as the guard is concerned: both proceed, both deduct stock, both
+create an order.
+
+F8 was the thing making that likely — the user saw no order, so they clicked again. With the UI
+polling and reporting outcomes, accidental retries should become rare. **Rare is not impossible:** a
+double-submit, an impatient refresh, or a flaky network retry all still produce two real orders for
+one intended purchase.
+
+**Fix shape:** derive the idempotency key from something stable about the *intent* rather than
+minting a new one per request - e.g. a hash of (userId, cart contents, cart version), or a
+short-lived `checkout:inflight:{userId}` key set with `SET NX` that returns the existing `checkoutId`
+instead of starting a second checkout. The second is much cheaper and closes the common case.
+
+Note this is the same class of problem as **F17**'s dedup concern, from the other direction: F17 is
+"the guard's key can be evicted", this is "the guard's key is too specific to catch the real
+duplicate".
+
+---
+
+# Live validation, 2026-08-16
+
+Docker and AWS became available after the fix-up pass, so everything previously marked
+"NOT live-validated" was exercised against real infrastructure: the full cloud stack run locally,
+the app built from the real `Dockerfile`, Grafana and Prometheus built from current source.
+
+**Full suite: `mvn test` 57/57, BUILD SUCCESS** — the first clean unqualified run, including
+`SchemaMigrationTest` (real MySQL, Flyway) and `ShopHubApplicationTests` (full-stack context).
+
+| # | How it was proven | Result |
+|---|---|---|
+| **F10** | `EXPLAIN` at 200k rows, with and without the indexes | scan `ALL` 199,506 rows → `ref` 4 rows; expiry scan `ALL` 199,506 → `range` **38 rows**, covering |
+| **F16/F15** | `db.*.getIndexes()` after startup | TTL 30d + 365d and both compound indexes present; a control app with `auto-index-creation=false` produced **only `_id_`**, confirming the correction |
+| **F14** | broker topic + group description | 3 partitions across 3 distinct consumers |
+| **F17** | eviction bake-off under identical load | see the table in F17 — `allkeys-lru` lost all three state keys, `volatile-ttl` kept all three |
+| **F18** | RSS of every container against its cap | **two caps were wrong**; see F18 |
+| **F19** | deliberately broken deploy | crash-looped, `up -d` still exited 0, smoke test **exit 52** → pipeline fails |
+| **F22** | `/actuator/prometheus` + Prometheus query | all 7 counters present at `0.0`; `shophub_checkout_total` returns 2 series in Prometheus |
+| **F22 alerts** | Grafana built from source, rules queried after evaluation | 5 rules, clean provisioning, both new rules rest **`Normal`** — not NoData |
+| **F1/F9/F7/F4** | live HTTP against the running app | token carries `uid`; duplicate register → **409**; unknown checkoutId → **404** |
+| **F8/F9** | full async checkout | `202` → `checkoutId` → poll → `SUCCESS` + real order, cart cleared, Mongo audit written |
+| **F12** | stopped Redis mid-traffic | product pages stayed **200**, degradation path logged, zero 500s |
+| **F21** | applied for real, SSM parameter swapped so the AMI genuinely changed, planned both ways | **with** the block: `No changes`; **without** it: instance `must be replaced`. Then destroyed |
+
+**On the real 4 GiB box** (applied, checked, destroyed): all 9 containers up, app `healthy`, host
+1640 MiB available. **MySQL measured 512.1 MiB - the original cap was exactly 512m**, so it would
+have sat at 100% and been OOM-killed; at the corrected 768m it runs at 66.7%. Redis confirmed on
+`volatile-ttl`. The CI smoke test returned `SMOKE_TEST_OK`.
+
+**Still unproven:** behaviour under real production load (all measurements are idle-to-moderate),
+and the Grafana/Prometheus changes on the live box - the deployed images predate Unit 16, so the
+Domain row and the two new alert rules were validated against locally-built images instead.
+
+---
+
+## F26 - A degraded product read takes ~4.8 seconds, because Redisson retries three times - `open` (medium)
+
+**Where:** `config/RedissonConfig.java` (no `retryAttempts`/`timeout` tuning), observed via `ProductCacheService`
+**Found in:** live validation of **F12**, 2026-08-16
+
+F12's fix works — product browsing returns 200 with Redis down instead of 500. But each degraded
+request took **~4.8 seconds**, because the Redis client retries 3 times before surfacing the failure
+(`... after 3 retry attempts` in the logged exception).
+
+So the promise "an outage makes product pages slower, not unavailable" is technically kept and
+practically thin: 4.8s is past most users' patience and past a typical upstream proxy timeout, and
+every request pays it for the whole outage. Worse, those threads are held for the full 4.8s, so a
+Redis outage under load turns into Tomcat thread exhaustion — the outage stops being confined to
+the cache after all.
+
+**Fix:** tune the client for fail-fast on the cache path — a short command timeout and 1 retry, so
+degradation costs milliseconds. The cache is the one dependency where waiting is pointless: MySQL
+is right there. Note the same client backs the Redisson locks, where a longer timeout IS wanted, so
+this likely needs the cache to use its own connection settings.
+
+---
+
+## F27 - A crash-looping container never reports `unhealthy`, it reports `starting` forever - `open` (medium)
+
+**Where:** `docker-compose.cloud.yml` app healthcheck (`start_period`)
+**Found in:** live validation of **F19**, 2026-08-16
+
+Deploying a deliberately broken app (bad datasource) and watching it under `restart: unless-stopped`:
+the container crash-looped (`RestartCount=3`) and its health status stayed **`starting`** — never
+`unhealthy` — because **each restart resets the `start_period` window**, so the retry counter never
+reaches its threshold.
+
+That matters because it is tempting to treat the compose healthcheck as the deploy gate. It is not
+one. It is genuinely useful for `depends_on: condition: service_healthy` ordering, but it cannot
+detect a crash-loop, which is exactly the failure F19 was about.
+
+**The smoke test is therefore the load-bearing half of F19, not the healthcheck** — and that is
+worth knowing before anyone "simplifies" the deploy by dropping the curl and trusting
+`docker compose ps`.
+
+**Fix options:** watch `RestartCount` explicitly in the deploy step, or keep `start_period` short
+enough that a genuine crash-loop exhausts `retries` between restarts. Neither replaces the smoke test.
+
+---
+
+## F28 - `.dockerignore` excludes `target`, so the documented local build path cannot work - `open` (low)
+
+**Where:** `.dockerignore` (`target`), `docker-compose.override.yml`, `Dockerfile.runtime`
+**Found in:** live validation, 2026-08-16
+
+`docker-compose.override.yml` documents a local workflow — build the jar on the host, then have
+`Dockerfile.runtime` `COPY target/shop-hub-*.jar` — explicitly to avoid the slow in-container Maven
+build. But `.dockerignore` excludes `target` from the build context, so that COPY fails with
+`lstat /target: no such file or directory`. The documented fast path is broken.
+
+Also note `docker-compose.override.yml` describes itself as *"not committed"* in its own header
+comment, but it **is** tracked in git.
+
+**Fix:** either negate the exclusion (`!target/shop-hub-*.jar`) or, better, keep `.dockerignore` as
+it is and point the override at a build context that legitimately contains the jar. Whichever way,
+the header comment about not being committed should be corrected or the file untracked.

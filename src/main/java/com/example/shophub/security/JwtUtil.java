@@ -31,9 +31,16 @@ public class JwtUtil {
      * that number is the revocation exposure window and a stale copy of it is
      * exactly what someone would quote wrongly while reasoning about an incident.
      */
-    public String generateAccessToken(String username, String role) {
+    public String generateAccessToken(String username, String role, Long userId) {
         return Jwts.builder()
                 .subject(username)
+                // The app works in userId (Order.userId, Cart.userId, …) while the
+                // subject is the username, so every authenticated request used to
+                // translate one to the other against the users table. Carrying the
+                // id here removes that query. Safe to cache in a token precisely
+                // because a user's numeric id is immutable — unlike role, which is
+                // why role has a staleness window and uid does not.
+                .claim("uid", userId)
                 .claim("role", role)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + accessExpirationMs))
@@ -61,6 +68,18 @@ public class JwtUtil {
 
     public String extractRole(String token) {
         return parseClaims(token).get("role", String.class);
+    }
+
+    /**
+     * Returns null for access tokens minted before the uid claim existed, and for
+     * refresh tokens, which never carry it.
+     *
+     * Read as Number rather than Long.class: JJWT deserializes a small JSON integer
+     * as Integer, and get("uid", Long.class) throws on the type mismatch.
+     */
+    public Long extractUserId(String token) {
+        Object uid = parseClaims(token).get("uid");
+        return uid instanceof Number n ? n.longValue() : null;
     }
 
     public String extractJti(String token) {

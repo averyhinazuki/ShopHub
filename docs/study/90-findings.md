@@ -14,7 +14,7 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | # | Finding | Severity | Status | Unit |
 |---|---|---|---|---|
 | F1 | DLT reports FAILED for a checkout that created a real order | high | **fixed** | 8 |
-| F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | known-deliberate | 9 |
+| F2 | `OrderExpiryScheduler` leaks stock permanently on lock timeout | high | **fixed** (now detectable) | 9 |
 | F3 | Second deletions fall behind — 500ms sleep caps the pool at ~16/sec *(revised: pools are NOT shared)* | medium | **fixed** | 5 |
 | F4 | Duplicate username returns 500 instead of 409 | low | **fixed** | 1 |
 | F5 | `UserActionLogFilter` ordering comment states a false rationale | doc | **fixed** | 2 |
@@ -25,14 +25,14 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | F11 | `product:{id}:stock` is written and deleted but never read | trivial | **fixed** | 5 |
 | F15 | No Mongo indexes - any audit-trail read is a full collection scan | medium | **fixed** | 10 |
 | F20 | Empty `terraform.tfstate` committed at repo root (no secrets) | trivial | **fixed** | 13 |
-| F22 | No domain metrics - every finding above would be invisible in prod | medium | open | 14 |
+| F22 | No domain metrics - every finding above would be invisible in prod | medium | **fixed** | 14 |
 | F21 | AMI re-resolves each plan, so any apply can replace the instance | known-deliberate | open | 13 |
 | F19 | Deploy goes green even if the app crash-loops - no smoke test, no app healthcheck | medium | open | 12 |
 | F18 | `mem_limit` on the 3 stateless services, none of the 5 stateful ones | medium | open | 11 |
 | F17 | **Redis `allkeys-lru` can evict dedup keys, refresh tokens, checkout status** | **high** | open | 11 |
 | F16 | **No Mongo TTL - unbounded growth on the volume MySQL shares** | **high** | **fixed** | 10 |
 | F14 | 3 partitions but concurrency=1 - async drain runs at 1/3 rate | medium | **fixed** | 8 |
-| F13 | Checkout compensation failure is logged, never retried or alerted | high | open | 7 |
+| F13 | Checkout compensation failure is logged, never retried or alerted | high | **fixed** (now detectable) | 7 |
 | F12 | Redis outage makes product pages 500 instead of degrading | medium | **fixed** | 5 |
 | F10 | `orders.user_id` has no index and no FK constraint | medium | **fixed** (indexes; FK deferred) | 4 |
 | F23 | Bare `RuntimeException` still thrown at four service sites → 500s | low-med | open | 16 |
@@ -94,7 +94,13 @@ they'll likely retry and create a second real order.
 
 ---
 
-## F2 — `OrderExpiryScheduler` loses stock permanently — `known-deliberate`, but undetectable
+## F2 — `OrderExpiryScheduler` loses stock permanently — `fixed` (detection added; gap still accepted)
+
+**Fixed** in `92d079e` (Unit 16, phase 5), on exactly the basis the write-up argued for: the gap
+itself stays accepted, but `shophub_stock_restore_failed_total{source="expiry"}` plus an alert
+means you can now learn you have hit it. Both branches are counted separately
+(`reason=lock_timeout` and `reason=error`). The durable fix — the transactional outbox shared with
+**F13** — remains deliberately out of scope.
 
 **Where:** `scheduler/OrderExpiryScheduler.java:126-136`, `:152-155`
 **Taught in:** Unit 9
@@ -145,7 +151,18 @@ decision that is otherwise defensible. The durable fix is the same transactional
 
 ---
 
-## F22 - The dashboard measures infrastructure only; every logged finding would be invisible - `open` (medium)
+## F22 - The dashboard measures infrastructure only; every logged finding would be invisible - `fixed` (medium)
+
+**Fixed** in `92d079e` (Unit 16, phase 5). A `DomainMetrics` component with seven counters, a
+"Domain" dashboard row (4 panels) and two alert rules. Items 1-3 of the write-up's priority list
+all landed; **item 4 (`redis_evicted_keys_total`) is deferred** — it needs a `redis-exporter`
+container and `user_data` is at ~12.1 KB against EC2's 16 KB limit.
+
+**The design detail that matters:** counters are registered in the constructor, not lazily at the
+call site. A counter that has never incremented **produces no time series**, so a rule querying it
+reads NoData rather than 0 — the same shape that left the p99 rule in `DatasourceNoData` until
+PR #9. Registering up front makes "nothing went wrong" read as 0 rather than as absence, and is
+why both new rules can safely use `noDataState: OK`.
 
 **Where:** `infra/monitoring/dashboards/shophub.json` (15 panels), `provisioning/alerting/rules.yml` (3 rules)
 **Taught in:** Unit 14
@@ -458,7 +475,12 @@ different checkoutIds - but worth understanding before turning it up.
 
 ---
 
-## F13 - Checkout compensation failure is logged and then forgotten - `open` (high)
+## F13 - Checkout compensation failure is logged and then forgotten - `fixed` (detection added) (high)
+
+**Fixed** in `92d079e` (Unit 16, phase 5) at strength level 3 of the write-up's own list —
+`shophub_stock_restore_failed_total{source="checkout"}` plus an alert rule. Levels 1 and 2
+(durable compensation via outbox, reconciliation job) remain open and are the real fix; this makes
+the problem visible rather than solving it.
 
 **Where:** `service/OrderService.java:163-176` (the catch at `:170-173`)
 **Taught in:** Unit 7

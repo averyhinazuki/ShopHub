@@ -8,6 +8,7 @@ import com.example.shophub.enums.ProductStatus;
 import com.example.shophub.exception.ResourceNotFoundException;
 import com.example.shophub.kafka.event.CheckoutRequestedEvent;
 import com.example.shophub.kafka.producer.OrderEventProducer;
+import com.example.shophub.metrics.DomainMetrics;
 import com.example.shophub.repository.jpa.*;
 import com.example.shophub.security.SecurityUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -16,6 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -57,6 +61,9 @@ class OrderServiceTest {
     @Mock StringRedisTemplate                    redisTemplate;
     @Mock ValueOperations<String, String>        valueOps;
     @Mock OrderEventProducer                     kafkaProducer;
+    // Real registry, not a mock — Counter.builder(...).register(mock) returns null.
+    MeterRegistry                                registry = new SimpleMeterRegistry();
+    @Spy DomainMetrics                           metrics  = new DomainMetrics(registry);
 
     @InjectMocks OrderService orderService;
 

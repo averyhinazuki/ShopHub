@@ -209,8 +209,23 @@ Grafana and looks.
 ## F21 - Any `terraform apply` can silently replace the instance, because the AMI re-resolves - `fixed`
 
 **Fixed** in `9be7233` (Unit 16, phase 6). `lifecycle { ignore_changes = [ami] }`, so OS upgrades
-become an explicit `terraform apply -replace=aws_instance.shophub`. `terraform validate` passes.
-**NOT live-validated** — no plan has been run against real AWS state.
+become an explicit `terraform apply -replace=aws_instance.shophub`.
+
+### LIVE-VALIDATED 2026-08-16 - applied, proven both ways, destroyed
+
+The stack was applied for real (instance `i-0b13d318a1fe7e008`, EIP 52.4.114.4), then the SSM
+parameter was temporarily pointed at a *different* AL2023 image so the resolved AMI genuinely
+changed. Same changed AMI, the lifecycle block the only variable:
+
+| Config | `terraform plan` result |
+|---|---|
+| **with** `ignore_changes = [ami]` | **`No changes.`** |
+| **without** it | `aws_instance.shophub must be replaced` - `ami ... # forces replacement`, cascading to `aws_eip_association` and `aws_volume_attachment` |
+
+That is the finding's scenario reproduced exactly: instance destroyed and recreated, EIP
+re-associated, data volume detached and reattached - an unplanned OS upgrade plus downtime, from a
+plan you were reading for another reason. `main.tf` was restored and re-verified as a no-op plan
+before teardown; the persistent volume and EIP survived the destroy as designed.
 
 **Where:** `infra/terraform/main.tf:52-54` (data source), `:65-66` (consumed by the instance)
 **Taught in:** Unit 13
@@ -272,11 +287,25 @@ recurrence.
 ## F19 - The deploy verifies the command ran, not that the app works - `fixed` (medium)
 
 **Fixed** in `9be7233` (Unit 16, phase 6). Both fixes 1 and 2 landed: a `curl -fsS` smoke test
-appended to the SSM command, and an `app` healthcheck in compose. The healthcheck required adding
-**curl to the Dockerfile's runtime stage** — `eclipse-temurin:21-jre` ships neither curl nor wget,
-which the write-up assumed away. Fix 3 (automatic rollback) stays out of scope: the SHA-tagged
-images exist but compose references `:latest` everywhere. **NOT live-validated** — the thing this
-most wants is a deliberately broken deploy proving the pipeline goes red.
+appended to the SSM command, and an `app` healthcheck in compose. Fix 3 (automatic rollback) stays
+out of scope: the SHA-tagged images exist but compose references `:latest` everywhere.
+
+### LIVE-VALIDATED 2026-08-16 - and it corrected two of my own claims
+
+**Proven:** a deliberately broken deploy (bad datasource) crash-looped under
+`restart: unless-stopped`, `docker compose up -d` still exited 0 - the old failure mode exactly -
+and the new smoke test exited **52**, failing the job. On the real EC2 box the same curl returned
+`SMOKE_TEST_OK` against a healthy stack.
+
+**Correction 1 - I was wrong that the JRE image lacks curl.** `eclipse-temurin:21-jre` ships it at
+`/usr/bin/curl`; the untouched GHCR image passed the healthcheck on the live box. The
+`apt-get install curl` added to the Dockerfile was **unnecessary** and has been removed. It also
+means there is no deploy-ordering hazard between the compose change and the image change.
+
+**Correction 2 - the healthcheck cannot do the job the finding implies.** Watching the broken
+container, health stayed `starting` and never became `unhealthy`, because each restart resets
+`start_period`. **The smoke test is the load-bearing half of this fix, not the healthcheck.**
+Logged as **F27**.
 
 **Where:** `.github/workflows/ci.yml:289-326`; `docker-compose.cloud.yml` app service has no healthcheck
 **Taught in:** Unit 12
@@ -1110,11 +1139,16 @@ the app built from the real `Dockerfile`, Grafana and Prometheus built from curr
 | **F1/F9/F7/F4** | live HTTP against the running app | token carries `uid`; duplicate register → **409**; unknown checkoutId → **404** |
 | **F8/F9** | full async checkout | `202` → `checkoutId` → poll → `SUCCESS` + real order, cart cleared, Mongo audit written |
 | **F12** | stopped Redis mid-traffic | product pages stayed **200**, degradation path logged, zero 500s |
-| **F21** | `terraform plan` | valid, 15 to add — but `ignore_changes` **cannot** be exercised against empty state |
+| **F21** | applied for real, SSM parameter swapped so the AMI genuinely changed, planned both ways | **with** the block: `No changes`; **without** it: instance `must be replaced`. Then destroyed |
 
-**Still unproven:** F21's `ignore_changes` behaviour (needs an existing instance plus a second plan
-after AWS publishes a new AL2023 image) and F18's totals against a real 4 GiB box under production
-load. Everything else above is now evidence rather than argument.
+**On the real 4 GiB box** (applied, checked, destroyed): all 9 containers up, app `healthy`, host
+1640 MiB available. **MySQL measured 512.1 MiB - the original cap was exactly 512m**, so it would
+have sat at 100% and been OOM-killed; at the corrected 768m it runs at 66.7%. Redis confirmed on
+`volatile-ttl`. The CI smoke test returned `SMOKE_TEST_OK`.
+
+**Still unproven:** behaviour under real production load (all measurements are idle-to-moderate),
+and the Grafana/Prometheus changes on the live box - the deployed images predate Unit 16, so the
+Domain row and the two new alert rules were validated against locally-built images instead.
 
 ---
 

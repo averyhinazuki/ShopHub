@@ -42,8 +42,9 @@ services:
     mem_limit: 1024m
     healthcheck:
       # `up -d` returns once containers are *started*, so without this a Spring
-      # startup failure crash-loops while the deploy reports success. curl is
-      # installed in Dockerfile's runtime stage specifically for this.
+      # startup failure crash-loops while the deploy reports success. curl ships
+      # in eclipse-temurin:21-jre already; nothing is installed for this.
+      # NB this does NOT catch a crash-loop — see F27. The CI smoke test does.
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
       interval: 15s
       timeout: 5s

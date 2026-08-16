@@ -38,6 +38,9 @@ Unit 16 (the fix-up pass) is working these in phases; `Status` tracks it.
 | F10 | `orders.user_id` has no index and no FK constraint | medium | **fixed** (indexes; FK deferred) | 4 |
 | F23 | Bare `RuntimeException` still thrown at four service sites → 500s | low-med | open | 16 |
 | F24 | The `checkout:{id}` record is hand-rolled in three classes | low | open | 16 |
+| F26 | A degraded (Redis-down) product read takes ~4.8s because Redisson retries | medium | open | 16 |
+| F27 | A crash-looping container sits at health=`starting` forever, never `unhealthy` | medium | open | 16 |
+| F28 | `.dockerignore` excludes `target`, so `docker-compose.override.yml` cannot build | low | open | 16 |
 
 
 ---
@@ -311,9 +314,31 @@ and **the pipeline goes green on a deploy that took the site down.**
 the stale "both stateful services bind-mount" comment corrected (it is five now).
 
 **The constraint the write-up didn't mention:** the compose file ships inside `user_data`, against
-EC2's **16 KB limit**. The first draft of these comments took it to 15628 bytes — 756 bytes of
-headroom — and had to be trimmed back to 14327. Documenting the reasoning in the file has a size
-cost here that it does not have in ordinary code. **NOT live-validated.**
+EC2's **16 KB limit**. Documenting the reasoning in the file has a size cost it does not have in
+ordinary code — see **F28**.
+
+### LIVE-VALIDATED 2026-08-16, and the first sizing was WRONG
+
+The whole cloud stack was run locally against the real limits and each container's RSS measured.
+Two of the five new caps were too small, and one was too generous:
+
+| Service | First cap | Measured | Corrected |
+|---|---|---|---|
+| **mysql** | 512m | **456 MiB idle, 89%** — on an *empty* DB, before any of the 50 Hikari connections allocated per-connection buffers | **768m** |
+| **app** | 768m | 559 MiB at 75% with the heap at only **187 of 512 MiB**; non-heap alone is 190 MiB, so a full heap lands near 900 MiB | **1024m** |
+| mongodb | 512m | 69 MiB empty (WT cache caps growth) | 384m |
+| prometheus | 256m | 43 MiB (17%) | 192m |
+| grafana | 256m | 50 MiB (19%) | 192m |
+| kafka | 512m | 335 MiB (65%) | unchanged |
+| redis | 192m | 3.9 MiB | unchanged |
+
+Total is still 3456 MiB, 640 MiB for the host, and after correction nothing exceeds 65%.
+
+**The lesson is the finding turning on itself.** F18's entire argument is that MySQL is the big,
+attractive target the OOM killer picks, so it must be capped deterministically. Sizing that cap by
+arithmetic rather than measurement set it at 512m against a 456 MiB idle footprint — a cap that
+would have OOM-killed MySQL under load, causing precisely the outcome the finding set out to
+prevent. **A limit derived from reasoning is a hypothesis; only measurement makes it a limit.**
 
 **Where:** `docker-compose.cloud.yml` - `mem_limit` appears only at `:129`, `:144`, `:160`
 **Taught in:** Unit 11
@@ -365,7 +390,24 @@ and a `/data/redis` bind mount. **Two corrections to what is written below:**
 
 `maxmemory` stays at 128mb on purpose: raising it only delays the problem and spends budget F18
 needs. Redis samples rather than sorts, so this is a strong heuristic, not a guarantee — the durable
-fixes (separate instance, or dedup as a MySQL unique index) remain open. **NOT live-validated.**
+fixes (separate instance, or dedup as a MySQL unique index) remain open.
+
+### LIVE-VALIDATED 2026-08-16 — the correction is empirically confirmed
+
+3000 cache keys (60s TTL) flooded against the three load-bearing key types at their real TTLs
+(checkout 30m, dedup 24h, refresh 1d), `maxmemory 4mb`, same load under each policy:
+
+| Policy | evicted | cache surviving | refresh token | dedup key | checkout status |
+|---|---|---|---|---|---|
+| `allkeys-lru` (before) | 1540 | 1440 | **evicted** | **evicted** | **evicted** |
+| `volatile-ttl` (after) | 1538 | 1439 | survived | survived | survived |
+
+Identical cache headroom, all three state keys preserved. The `allkeys-lru` row is the finding's
+predicted failure reproduced exactly: under nothing more than memory pressure, the user is logged
+out, the checkout is stranded, and the dedup guard is gone so a redelivery double-orders.
+
+Also confirmed as deployed: policy `volatile-ttl`, `maxmemory 134217728`, `appendonly yes`, and the
+AOF directory created on the `/data` bind mount.
 
 **Where:** `docker-compose.cloud.yml:65` - `command: --maxmemory 128mb --maxmemory-policy allkeys-lru`
 **Taught in:** Unit 11
@@ -1043,3 +1085,97 @@ instead of starting a second checkout. The second is much cheaper and closes the
 Note this is the same class of problem as **F17**'s dedup concern, from the other direction: F17 is
 "the guard's key can be evicted", this is "the guard's key is too specific to catch the real
 duplicate".
+
+---
+
+# Live validation, 2026-08-16
+
+Docker and AWS became available after the fix-up pass, so everything previously marked
+"NOT live-validated" was exercised against real infrastructure: the full cloud stack run locally,
+the app built from the real `Dockerfile`, Grafana and Prometheus built from current source.
+
+**Full suite: `mvn test` 57/57, BUILD SUCCESS** — the first clean unqualified run, including
+`SchemaMigrationTest` (real MySQL, Flyway) and `ShopHubApplicationTests` (full-stack context).
+
+| # | How it was proven | Result |
+|---|---|---|
+| **F10** | `EXPLAIN` at 200k rows, with and without the indexes | scan `ALL` 199,506 rows → `ref` 4 rows; expiry scan `ALL` 199,506 → `range` **38 rows**, covering |
+| **F16/F15** | `db.*.getIndexes()` after startup | TTL 30d + 365d and both compound indexes present; a control app with `auto-index-creation=false` produced **only `_id_`**, confirming the correction |
+| **F14** | broker topic + group description | 3 partitions across 3 distinct consumers |
+| **F17** | eviction bake-off under identical load | see the table in F17 — `allkeys-lru` lost all three state keys, `volatile-ttl` kept all three |
+| **F18** | RSS of every container against its cap | **two caps were wrong**; see F18 |
+| **F19** | deliberately broken deploy | crash-looped, `up -d` still exited 0, smoke test **exit 52** → pipeline fails |
+| **F22** | `/actuator/prometheus` + Prometheus query | all 7 counters present at `0.0`; `shophub_checkout_total` returns 2 series in Prometheus |
+| **F22 alerts** | Grafana built from source, rules queried after evaluation | 5 rules, clean provisioning, both new rules rest **`Normal`** — not NoData |
+| **F1/F9/F7/F4** | live HTTP against the running app | token carries `uid`; duplicate register → **409**; unknown checkoutId → **404** |
+| **F8/F9** | full async checkout | `202` → `checkoutId` → poll → `SUCCESS` + real order, cart cleared, Mongo audit written |
+| **F12** | stopped Redis mid-traffic | product pages stayed **200**, degradation path logged, zero 500s |
+| **F21** | `terraform plan` | valid, 15 to add — but `ignore_changes` **cannot** be exercised against empty state |
+
+**Still unproven:** F21's `ignore_changes` behaviour (needs an existing instance plus a second plan
+after AWS publishes a new AL2023 image) and F18's totals against a real 4 GiB box under production
+load. Everything else above is now evidence rather than argument.
+
+---
+
+## F26 - A degraded product read takes ~4.8 seconds, because Redisson retries three times - `open` (medium)
+
+**Where:** `config/RedissonConfig.java` (no `retryAttempts`/`timeout` tuning), observed via `ProductCacheService`
+**Found in:** live validation of **F12**, 2026-08-16
+
+F12's fix works — product browsing returns 200 with Redis down instead of 500. But each degraded
+request took **~4.8 seconds**, because the Redis client retries 3 times before surfacing the failure
+(`... after 3 retry attempts` in the logged exception).
+
+So the promise "an outage makes product pages slower, not unavailable" is technically kept and
+practically thin: 4.8s is past most users' patience and past a typical upstream proxy timeout, and
+every request pays it for the whole outage. Worse, those threads are held for the full 4.8s, so a
+Redis outage under load turns into Tomcat thread exhaustion — the outage stops being confined to
+the cache after all.
+
+**Fix:** tune the client for fail-fast on the cache path — a short command timeout and 1 retry, so
+degradation costs milliseconds. The cache is the one dependency where waiting is pointless: MySQL
+is right there. Note the same client backs the Redisson locks, where a longer timeout IS wanted, so
+this likely needs the cache to use its own connection settings.
+
+---
+
+## F27 - A crash-looping container never reports `unhealthy`, it reports `starting` forever - `open` (medium)
+
+**Where:** `docker-compose.cloud.yml` app healthcheck (`start_period`)
+**Found in:** live validation of **F19**, 2026-08-16
+
+Deploying a deliberately broken app (bad datasource) and watching it under `restart: unless-stopped`:
+the container crash-looped (`RestartCount=3`) and its health status stayed **`starting`** — never
+`unhealthy` — because **each restart resets the `start_period` window**, so the retry counter never
+reaches its threshold.
+
+That matters because it is tempting to treat the compose healthcheck as the deploy gate. It is not
+one. It is genuinely useful for `depends_on: condition: service_healthy` ordering, but it cannot
+detect a crash-loop, which is exactly the failure F19 was about.
+
+**The smoke test is therefore the load-bearing half of F19, not the healthcheck** — and that is
+worth knowing before anyone "simplifies" the deploy by dropping the curl and trusting
+`docker compose ps`.
+
+**Fix options:** watch `RestartCount` explicitly in the deploy step, or keep `start_period` short
+enough that a genuine crash-loop exhausts `retries` between restarts. Neither replaces the smoke test.
+
+---
+
+## F28 - `.dockerignore` excludes `target`, so the documented local build path cannot work - `open` (low)
+
+**Where:** `.dockerignore` (`target`), `docker-compose.override.yml`, `Dockerfile.runtime`
+**Found in:** live validation, 2026-08-16
+
+`docker-compose.override.yml` documents a local workflow — build the jar on the host, then have
+`Dockerfile.runtime` `COPY target/shop-hub-*.jar` — explicitly to avoid the slow in-container Maven
+build. But `.dockerignore` excludes `target` from the build context, so that COPY fails with
+`lstat /target: no such file or directory`. The documented fast path is broken.
+
+Also note `docker-compose.override.yml` describes itself as *"not committed"* in its own header
+comment, but it **is** tracked in git.
+
+**Fix:** either negate the exclusion (`!target/shop-hub-*.jar`) or, better, keep `.dockerignore` as
+it is and point the override at a build context that legitimately contains the jar. Whichever way,
+the header comment about not being committed should be corrected or the file untracked.

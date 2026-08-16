@@ -28,6 +28,11 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/flash_sale_logs
+      # Load-bearing. Spring Boot 3 defaults this to false, which makes every
+      # @Indexed / @CompoundIndex on the two @Document classes inert — including
+      # their TTL indexes, so the audit collections would grow forever while
+      # looking like they had retention. Two collections, so startup cost is nil.
+      auto-index-creation: true
     redis:
       host: localhost
       port: 6379
@@ -43,6 +48,14 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    listener:
+      # All three topics are created with 3 partitions, but
+      # ConcurrentKafkaListenerContainerFactory defaults to concurrency 1, so one
+      # thread was assigned all three and drained them sequentially — the async
+      # checkout design ran at a third of its intended rate. 3 is the ceiling:
+      # partition count bounds parallelism, so raising it further gains nothing
+      # without adding partitions.
+      concurrency: 3
 
   # Jackson — serialize LocalDateTime as ISO string, not [year,month,day,...] array
   jackson:

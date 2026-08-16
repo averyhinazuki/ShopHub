@@ -5,12 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.scheduling.TaskScheduler;
 
+import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.*;
@@ -28,12 +31,13 @@ class ProductCacheServiceTest {
 
     @Mock StringRedisTemplate stringRedisTemplate;
     @Mock ValueOperations<String, String> valueOps;
+    @Mock TaskScheduler cacheEvictScheduler;
 
     private ProductCacheService cacheService;
 
     @BeforeEach
     void setUp() {
-        cacheService = new ProductCacheService(stringRedisTemplate, new ObjectMapper());
+        cacheService = new ProductCacheService(stringRedisTemplate, new ObjectMapper(), cacheEvictScheduler);
     }
 
     @Test
@@ -62,6 +66,30 @@ class ProductCacheServiceTest {
                 .thenThrow(new RedisConnectionFailureException("Redis unreachable"));
 
         assertThatNoException().isThrownBy(() -> cacheService.deleteCache(1L));
+    }
+
+    /**
+     * F3. The second deletion must be *scheduled*, not slept through: the caller
+     * returns immediately and no thread is held for the delay. Blocking capped
+     * throughput at ~16 deletions/sec, so under load the eviction fired minutes
+     * after the write it was meant to protect — evicting a long-correct entry
+     * while leaving the actual stale window uncovered.
+     */
+    @Test
+    void scheduleSecondDeletion_schedulesTheDeleteAndReturnsWithoutBlocking() {
+        long before = System.currentTimeMillis();
+        cacheService.scheduleSecondDeletion(1L);
+        long elapsed = System.currentTimeMillis() - before;
+
+        assertThat(elapsed).isLessThan(ProductCacheService.SECOND_DELETION_DELAY_MS);
+
+        ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        verify(cacheEvictScheduler).schedule(task.capture(), any(Instant.class));
+        verifyNoInteractions(stringRedisTemplate);
+
+        // Running the captured task performs the eviction it was scheduled for.
+        task.getValue().run();
+        verify(stringRedisTemplate).delete("product:1:detail");
     }
 
     /** A cache hit must still work normally — degradation must not become "never cache". */

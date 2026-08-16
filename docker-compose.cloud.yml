@@ -6,10 +6,12 @@
 #     data survives instance replacement (see infra/terraform/persistent/).
 #   - Every service carries a mem_limit, sized for a 4 GiB instance
 #     (c7i-flex.large). Keep instance_type in terraform.tfvars in sync.
-#     Application caps (-Xmx, buffer pool, maxmemory, wiredTigerCache) bound one
-#     pool each and are NOT a substitute: mem_limit bounds total RSS, so the
-#     offender dies with exit code 137 instead of the host OOM killer picking an
-#     innocent stateful container. Total 3200 MiB, ~900 MiB left for the host.
+#     App caps (-Xmx, buffer pool, maxmemory, WT cache) bound one pool each and
+#     are NOT a substitute: mem_limit bounds total RSS, so the offender dies with
+#     exit 137 instead of the host OOM killer picking an innocent stateful
+#     container. Values are MEASURED from a local run of this stack, not
+#     estimated (idle RSS in each note below). Total 3456 MiB, 640 for the host.
+#     Re-measure before adding a service; see F18 in docs/study/90-findings.md.
 #
 # Kafka is required: checkout is async (initiateCheckout publishes a
 # CheckoutRequestedEvent; CheckoutRequestedConsumer does the work), so with no
@@ -34,13 +36,15 @@ services:
       # Explicit heap cap — the 25%-of-container default is too generous with
       # five other processes on a 4 GiB box.
       JAVA_TOOL_OPTIONS: "-Xmx512m"
-    # 768m against -Xmx512m: JVM RSS is commonly 1.5-2x heap once metaspace,
-    # thread stacks, direct buffers, JIT code cache and GC structures count.
-    mem_limit: 768m
+    # 1g against -Xmx512m. Measured 559 MiB RSS with the heap at only 187/512
+    # MiB, plus 190 MiB non-heap — a full heap lands near 900 MiB. 768m looked
+    # fine at idle (73%) and would have been OOM-killed under flash-sale load.
+    mem_limit: 1024m
     healthcheck:
       # `up -d` returns once containers are *started*, so without this a Spring
-      # startup failure crash-loops while the deploy reports success. curl is
-      # installed in Dockerfile's runtime stage specifically for this.
+      # startup failure crash-loops while the deploy reports success. curl ships
+      # in eclipse-temurin:21-jre already; nothing is installed for this.
+      # NB this does NOT catch a crash-loop — see F27. The CI smoke test does.
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
       interval: 15s
       timeout: 5s
@@ -64,9 +68,11 @@ services:
       MYSQL_DATABASE: flash_sale_db
     # Pin the buffer pool to document the memory budget explicitly.
     command: --innodb-buffer-pool-size=128M
-    # 512m against a 128M buffer pool: MySQL sits at 300-500 MB once
-    # per-connection buffers (x50 Hikari), log buffer and table cache count.
-    mem_limit: 512m
+    # 768m against a 128M buffer pool. Measured 456 MiB RSS IDLE on an empty
+    # DB — 89% of the 512m first proposed, before any of the 50 Hikari
+    # connections allocated per-connection buffers. MySQL is the container this
+    # finding exists to protect; arithmetic sizing nearly did the opposite.
+    mem_limit: 768m
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -80,14 +86,13 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
-    # NOT just a cache. Four key types share this instance and only the first is
-    # disposable: product:*:detail (60s), checkout:* (30m), kafka:processed:*
-    # (24h), refresh:* (1d). allkeys-lru evicted any of them under mere memory
-    # pressure; an evicted dedup key reprocesses a message - second order.
-    # volatile-ttl evicts shortest-TTL-first, and that ladder IS the priority
-    # order wanted. (volatile-lru would not help: all four carry TTLs.) Redis
-    # samples rather than sorts, so it's a heuristic; a separate instance for
-    # state, or dedup in MySQL, is the durable fix. See F17 in docs/study.
+    # NOT just a cache. Four key types, only the first disposable:
+    # product:*:detail 60s, checkout:* 30m, kafka:processed:* 24h, refresh:* 1d.
+    # allkeys-lru evicted any of them under memory pressure (measured: all three
+    # non-cache types lost; volatile-ttl kept all three at equal cache headroom).
+    # Shortest-TTL-first IS the priority order wanted. volatile-lru would not
+    # help - all four carry TTLs. Heuristic, not a guarantee: a separate instance
+    # for state, or dedup in MySQL, is the durable fix. See F17 in docs/study.
     # appendonly + volume: a restart used to wipe all four types outright.
     command: --maxmemory 128mb --maxmemory-policy volatile-ttl --appendonly yes
     mem_limit: 192m
@@ -126,9 +131,9 @@ services:
     restart: unless-stopped
     # Cap WiredTiger cache (default ~50% of RAM); 0.25 GiB suffices for logs.
     command: --wiredTigerCacheSizeGB 0.25
-    # 512m against a 0.25 GiB WiredTiger cache, leaving room for connections
-    # and the working set of the indexes F15/F16 added.
-    mem_limit: 512m
+    # 384m against a 0.25 GiB WT cache. Measured 69 MiB empty; the WT cap bounds
+    # most growth, so 512m was generous — spent on mysql/app instead.
+    mem_limit: 384m
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
       interval: 10s
@@ -177,7 +182,8 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=7d
-    mem_limit: 256m
+    # Measured 43 MiB (17% of the 256m first proposed); 192m still ample for 7d.
+    mem_limit: 192m
     # Loopback only: reachable by the on-box SSM agent, never the internet.
     ports:
       - "127.0.0.1:9090:9090"
@@ -193,7 +199,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
-    mem_limit: 256m
+    # Measured 50 MiB (19% of 256m).
+    mem_limit: 192m
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
